@@ -46,6 +46,8 @@ note bottom of Cache : Keeps hot vectors in-memory (Data Pre-Fetching)
 }
 
 package "Domain Model" {
+  class "AccessRequest" as AccessRequest
+  class "AccessGrantResult" as AccessGrantResult
   class "FaceVector" as FaceVector
 }
 
@@ -57,6 +59,7 @@ package "Events" {
 
 ' Provided/Required interfaces
 AccessService ..|> IAPI
+AAM ..|> IAPI
 AAM -( IRepo
 AAM --> Cache : "prefetch & lookup"
 Cache -( IRepo
@@ -78,6 +81,8 @@ ingress --> IAPI : "requestAccessGrant"
 IPub --> events : "publishEvent(topic, event)"
 
 ' Domain model usage
+IAPI ..> AccessRequest : uses
+IAPI ..> AccessGrantResult : uses
 IRepo ..> FaceVector : uses
 IPub ..> DomainEvent : uses
 AAM ..> AccessAttemptEvent : emits

@@ -56,7 +56,7 @@ package "Auth Service" as AS {
   component "TokenService" as TS
 }
 
-package "Search Service" as SS {
+package "Branch Content Service" as SS {
   portin "api_in" as api_in_search
   portin "broker_in" as broker_in_search
   portout "events" as events_search
@@ -67,13 +67,13 @@ package "Search Service" as SS {
   interface "IMessagePublisherService" as IPubSearch
   interface "IMessageSubscriptionService" as ISubSearch
 
-  component "SearchManager" as SM
-  component "PreferenceMatchConsumer" as PMC
-  component "LLM Keyword Stage" as LLMStage
-  component "DS-07 Index Stage" as IndexStage
-  component "DS-07 Search Index" as DS07Index
-  component "PreferenceMatchScheduler" as PMS
-  component "SchedulingPolicyWindow" as SchedWindow
+  component "BranchContentService" as BranchContentService
+  component "PreferenceMatchConsumer" as PreferenceMatchConsumer
+  component "LlmKeywordExtractionStage" as LlmKeywordExtractionStage
+  component "MatchIndexUpdateStage" as MatchIndexUpdateStage
+  component "BranchPreferenceIndex" as BranchPreferenceIndex
+  component "PreferenceMatchScheduler" as PreferenceMatchScheduler
+  component "SchedulingPolicyWindow" as SchedulingPolicyWindow
 }
 
 package "Helper Service" as HS {
@@ -82,7 +82,7 @@ package "Helper Service" as HS {
 
   interface "IHelperServiceApi" as IHelperAPI
   interface "IHelperRepository" as IHelperRepo
-  interface "IPanDokuModelService" as IPanDoku
+  interface "IAIPanDokuService" as IPanDoku
   interface "IMessagePublisherService" as IPubHelper
   interface "IMessageSubscriptionService" as ISubHelper
 
@@ -118,7 +118,7 @@ package "Notification Dispatcher" as ND {
 
   interface "IPushNotificationGateway" as IPushGateway
 
-  component "NotificationDispatcher" as NDispatch
+  component "NotificationDispatcherConsumer" as NDispatch
 }
 
 component "Push Notification Service" as PushSvc
@@ -126,7 +126,7 @@ component "Push Notification Service" as PushSvc
 ' Implementations (provided APIs)
 Router ..|> IEntry
 AM ..|> IAuthAPI
-SM ..|> ISearchAPI
+BranchContentService ..|> ISearchAPI
 SRM ..|> IStatus
 HBC ..|> ITrig
 
@@ -137,15 +137,15 @@ Router -( ZonePolicy
 AM -( IAuthRepo
 AM -( ICCV
 AM -( IPubAuth
-SM -( ISearchRepo
-SM -( ILLM
-SM -( IPubSearch
-PMC -( ISubSearch
-PMS --> PMC : drainBufferedEvents()
-PMS -( ISearchRepo
-PMS --> SchedWindow : checkWindow()
-LLMStage -( ILLM
-IndexStage -( ISearchRepo
+BranchContentService -( ISearchRepo
+BranchContentService -( ILLM
+BranchContentService -( IPubSearch
+PreferenceMatchConsumer -( ISubSearch
+PreferenceMatchScheduler --> PreferenceMatchConsumer : drainBufferedEvents()
+PreferenceMatchScheduler -( ISearchRepo
+PreferenceMatchScheduler --> SchedulingPolicyWindow : checkWindow()
+LlmKeywordExtractionStage -( ILLM
+MatchIndexUpdateStage -( ISearchRepo
 TMM -( IHelperRepo
 TMM -( IPanDoku
 RCM -( IHelperRepo
@@ -165,12 +165,12 @@ ICM -( IDisc
 ' Internal interactions per service
 Router --> ICM : forwardRequest()
 AM --> TS : issue/validate token
-PMC --> SM : subscription-driven matching
-SM --> LLMStage : extractKeywords()
-LLMStage --> IndexStage : persistKeywords()
-IndexStage --> DS07Index : updateIndex()
-SM --> ISearchRepo : executeMatchQuery()
-PMS --> ISearchRepo : batchMatch()
+PreferenceMatchConsumer --> BranchContentService : subscription-driven matching
+BranchContentService --> LlmKeywordExtractionStage : extractKeywords()
+LlmKeywordExtractionStage --> MatchIndexUpdateStage : persistKeywords()
+MatchIndexUpdateStage --> BranchPreferenceIndex : updateIndex()
+BranchContentService --> ISearchRepo : executeMatchQuery()
+PreferenceMatchScheduler --> ISearchRepo : batchMatch()
 
 ' Service-to-service calls (logical, via adapters or HTTP/gRPC)
 Client --> ingress : routeRequest

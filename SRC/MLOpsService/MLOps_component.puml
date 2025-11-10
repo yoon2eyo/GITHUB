@@ -1,6 +1,4 @@
-@startuml MLOps Component Diagram
-
-' 기본 설정
+@startuml
 !pragma layout smetana
 allowmixing
 skinparam componentStyle rectangle
@@ -9,124 +7,94 @@ skinparam packageStyle rectangle
 skinparam portStyle solid
 skinparam interfaceStyle rectangle
 
-package "MLOps Core" {
-    ' Interface Layer (Ports)
-    package "Interface Layer" {
-        interface "IAuthRepository" as IAuth {
-            + findRecentlyRegisteredUsers(sinceDate: Date): List<UserAccount>
-        }
-        interface "IHelperRepository" as IHelper {
-            + findConfirmedTasksForRetraining(): List<HelperTask>
-        }
-        interface "ITrainingTriggerService" as ITrainTrig {
-            + triggerDailyBatch(timestamp: Date): void
-        }
-        interface "IFaceModelClient" as IFaceClient {
-            + callHotSwapApi(modelId: String, newVersion: String, modelBinary: byte[]): void
-            + callRollbackApi(modelId: String, previousVersion: String): void
-        }
-        interface "IModelDataRepository" as IModelRepo {
-            + saveRawTrainingData(type: String, data: byte[]): void
-            + loadAllTrainingData(): List<byte[]>
-            + saveModelBinary(modelId: String, version: String, bin: byte[]): void
-            + loadModelBinary(modelId: String, version: String): Optional<byte[]>
-        }
+title MLOps Service - Component Diagram
+
+package "MLOps Service" as MLOps {
+
+  package "Ports" {
+    interface "ITrainingTriggerService" as ITrainingTriggerService
+    interface "IAuthRepository" as IAuthRepository
+    interface "IHelperRepository" as IHelperRepository
+    interface "IFaceModelClient" as IFaceModelClient
+    interface "IModelDataRepository" as IModelDataRepository {
+      + saveRawTrainingData(type: String, data: byte[])
+      + loadAllTrainingData(): List<byte[]>
+      + saveModelBinary(modelId: String, version: String, bin: byte[])
+      + loadModelBinary(modelId: String, version: String): Optional<byte[]>
     }
+  }
 
-    package "Adapter Layer" {
-        component "AuthRepositoryAdapter" as AuthAdapter
-        component "HelperRepositoryAdapter" as HelperAdapter
-    }
+  package "Adapters" {
+    component "AuthRepositoryAdapter" as AuthRepositoryAdapter
+    component "HelperRepositoryAdapter" as HelperRepositoryAdapter
+  }
 
-    ' Service Layer
-    package "Service Layer" {
-        component "TrainingManager" as TrainingManager
-        component "DataCollector" as DataCollector
-        component "DeploymentService" as DeployService
-    }
+  package "Service Layer" {
+    component "TrainingManager" as TrainingManager
+    component "DataCollector" as DataCollector
+    component "DeploymentService" as DeploymentService
+  }
 
-    ' Storage Layer
-    package "Storage Layer" {
-        component "ModelDataRepository" as ModelRepo
+  package "Storage" {
+    component "ModelDataRepository" as ModelDataRepository
+    database "DS-05\nTraining Dataset" as DS05
+  }
 
-        database "DS-05\nAI Training Dataset" as DS05
-    }
-
-    ' Domain Model (Data Transfer Objects)
-    package "Domain Layer" {
-        class "UserAccount" as UserAccount
-        class "HelperTask" as HelperTask
-    }
-
-    ' Domain Model Usage
-    IAuth ..> UserAccount : uses
-    IHelper ..> HelperTask : uses
-
-    ' 외부 통신 포트
-    portin "auth_data_in" as auth_port
-    portin "helper_data_in" as helper_port
-    portin "training_trigger_in" as train_port
-    portout "face_model_api_out" as face_port
+  package "Domain" {
+    class "UserAccount" as UserAccount
+    class "HelperTask" as HelperTask
+  }
 }
 
-' External Components
-component "Auth Service" as AuthService
-component "Helper Service" as HelperService
-component "Face Model Service" as FaceModel
+package "External Systems" {
+  component "RemoteAuthDataClient" as RemoteAuthDataClient
+  component "RemoteHelperDataClient" as RemoteHelperDataClient
+  component "Face Model Service" as FaceModelService
+}
+
 actor "Scheduler" as Scheduler
 
-' Internal Relationships
-TrainingManager ..|> ITrainTrig
-TrainingManager --> DataCollector : "collectDailyTrainingData()"
-TrainingManager --> DeployService : "executeZeroDowntimeDeployment()"
-TrainingManager -( IModelRepo
-AuthAdapter ..|> IAuth
-HelperAdapter ..|> IHelper
-DataCollector -( IAuth
-DataCollector -( IHelper
-DataCollector -( IModelRepo
-DeployService -( IFaceClient
-DeployService -( IModelRepo
-ModelRepo --> DS05
+' Port implementations
+TrainingManager ..|> ITrainingTriggerService
+AuthRepositoryAdapter ..|> IAuthRepository
+HelperRepositoryAdapter ..|> IHelperRepository
+ModelDataRepository ..|> IModelDataRepository
 
-' External Relationships
-AuthService --> auth_port
-HelperService --> helper_port
-Scheduler --> train_port
-face_port --> FaceModel
-auth_port --> AuthAdapter : "read-only export"
-helper_port --> HelperAdapter : "read-only export"
-train_port --> ITrainTrig
-IFaceClient --> face_port
+' Dependencies within service
+TrainingManager --> DataCollector : collectDailyTrainingData()
+TrainingManager --> DeploymentService : executeZeroDowntimeDeployment()
+TrainingManager -( IModelDataRepository
 
-' Notes
-note right of DataCollector
-  Collects training data daily
-  from multiple sources
-  via read-only adapters
-end note
+DataCollector -( IAuthRepository
+DataCollector -( IHelperRepository
+DataCollector -( IModelDataRepository
 
-note right of TrainingManager
-  Orchestrates batch training,
-  verification, deployment
-end note
+DeploymentService -( IFaceModelClient
+DeploymentService -( IModelDataRepository
 
-note right of DeployService
-  Implements Hot Swap deployment
-  with automatic rollback
-end note
+ModelDataRepository --> DS05
 
-note right of ModelRepo
-  Manages AI model versions
-  and training datasets
-end note
+' Adapter dependencies on external clients
+AuthRepositoryAdapter --> RemoteAuthDataClient
+HelperRepositoryAdapter --> RemoteHelperDataClient
+DeploymentService --> FaceModelService : via IFaceModelClient
+
+' External interactions
+Scheduler --> ITrainingTriggerService : triggerDailyBatch()
+RemoteAuthDataClient --> AuthRepositoryAdapter : export (read-only)
+RemoteHelperDataClient --> HelperRepositoryAdapter : export (read-only)
+IFaceModelClient --> FaceModelService : hot swap / rollback
+
+' Domain usage
+IAuthRepository ..> UserAccount : returns
+IHelperRepository ..> HelperTask : returns
 
 legend right
-  MLOps Service Components
-  - Daily Batch Training (ITrainingTriggerService)
-  - Zero-Downtime Deployment (IFaceModelClient)
-  - Model Version Management (IModelDataRepository)
-  - Training Data Collection (IAuth/IHelper via adapters)
+  MLOps service structure
+  - TrainingManager implements ITrainingTriggerService
+  - DataCollector pulls read-only data via repository adapters
+  - ModelDataRepository owns DS-05 storage and provides binaries
+  - DeploymentService calls IFaceModelClient for hot swap / rollback
 end legend
 
 @enduml

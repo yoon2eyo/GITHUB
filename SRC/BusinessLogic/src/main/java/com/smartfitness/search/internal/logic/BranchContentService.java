@@ -2,8 +2,10 @@ package com.smartfitness.search.internal.logic;
 
 import com.smartfitness.event.BranchPreferenceCreatedEvent;
 import com.smartfitness.messaging.IMessagePublisherService;
+import com.smartfitness.search.internal.index.BranchPreferenceIndex;
 import com.smartfitness.search.internal.pipeline.LlmKeywordExtractionStage;
 import com.smartfitness.search.internal.pipeline.MatchIndexUpdateStage;
+import com.smartfitness.search.internal.query.QueryKeywordTokenizer;
 import com.smartfitness.search.model.BranchRecommendation;
 import com.smartfitness.search.model.ContentType;
 import com.smartfitness.search.model.SearchQuery;
@@ -11,28 +13,38 @@ import com.smartfitness.search.ports.ILLMAnalysisService;
 import com.smartfitness.search.ports.ISearchRepository;
 import com.smartfitness.search.ports.ISearchServiceApi;
 import java.util.List;
+import java.util.Objects;
 
 /**
- * SearchManager: Orchestrates LLM analysis, preference persistence, and fast matching.
+ * BranchContentService: Orchestrates LLM analysis, preference persistence, and fast matching.
  */
-public class SearchManager implements ISearchServiceApi {
+public class BranchContentService implements ISearchServiceApi {
     private final ISearchRepository repository;
     private final LlmKeywordExtractionStage llmStage;
     private final MatchIndexUpdateStage indexStage;
+    private final QueryKeywordTokenizer queryTokenizer;
     private final IMessagePublisherService messagePublisher;
 
-    public SearchManager(ISearchRepository repository,
-                         ILLMAnalysisService llmClient,
-                         IMessagePublisherService messagePublisher) {
-        this.repository = repository;
-        this.llmStage = new LlmKeywordExtractionStage(llmClient);
-        this.indexStage = new MatchIndexUpdateStage(repository);
-        this.messagePublisher = messagePublisher;
+    public BranchContentService(ISearchRepository repository,
+                                ILLMAnalysisService llmClient,
+                                IMessagePublisherService messagePublisher) {
+        this(repository, llmClient, messagePublisher, new BranchPreferenceIndex());
+    }
+
+    public BranchContentService(ISearchRepository repository,
+                                ILLMAnalysisService llmClient,
+                                IMessagePublisherService messagePublisher,
+                                BranchPreferenceIndex branchPreferenceIndex) {
+        this.repository = Objects.requireNonNull(repository, "repository");
+        this.llmStage = new LlmKeywordExtractionStage(Objects.requireNonNull(llmClient, "llmClient"));
+        this.indexStage = new MatchIndexUpdateStage(this.repository, branchPreferenceIndex);
+        this.queryTokenizer = new QueryKeywordTokenizer();
+        this.messagePublisher = Objects.requireNonNull(messagePublisher, "messagePublisher");
     }
 
     @Override
     public List<BranchRecommendation> searchBranches(SearchQuery query, Long customerId) {
-        List<String> customerKeywords = llmStage.extractKeywords(query.getText());
+        List<String> customerKeywords = queryTokenizer.tokenize(query.getText());
         indexStage.persistCustomerKeywords(customerId, customerKeywords);
         return repository.executeMatchQuery(customerKeywords);
     }
@@ -42,5 +54,5 @@ public class SearchManager implements ISearchServiceApi {
         List<String> preferenceKeywords = llmStage.extractKeywords(content);
         indexStage.persistBranchKeywords(sourceId, preferenceKeywords);
         messagePublisher.publishEvent("preferences", new BranchPreferenceCreatedEvent(sourceId, preferenceKeywords));
-}
+    }
 }

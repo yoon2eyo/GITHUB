@@ -1,6 +1,4 @@
-@startuml MessageBroker Component Diagram
-
-' 기본 설정
+@startuml
 !pragma layout smetana
 allowmixing
 skinparam componentStyle rectangle
@@ -9,71 +7,82 @@ skinparam packageStyle rectangle
 skinparam portStyle solid
 skinparam interfaceStyle rectangle
 
-package "MessageBroker Core" {
-    ' Interface Layer (Port Definitions)
-    package "Interface Layer" {
-        interface "IMessagePublisherService" as IPublisher {
-            + publishEvent(topic: String, event: DomainEvent)
-        }
-        interface "IMessageSubscriptionService" as ISubscriber {
-            + subscribeToTopic(topic: String, handler: Consumer<DomainEvent>)
-        }
-    }
+title Message Broker & Persistence Adapters
 
-    ' Domain Layer
-    package "Domain Layer" {
-        interface "DomainEvent" as DomainEvent
-        class "UserRegisteredEvent" as UserRegisteredEvent
-        class "BranchPreferenceCreatedEvent" as BranchPreferenceCreatedEvent
-        class "TaskConfirmedEvent" as TaskConfirmedEvent
-        class "EquipmentFaultDetectedEvent" as EquipmentFaultDetectedEvent
-        class "AccessAttemptEvent" as AccessAttemptEvent
-    }
-
-    ' Core Implementation Layer
-    package "Core Layer" {
-        component "MessageBrokerComponent" as MessageBroker
-    }
-
-    ' 외부 통신 포트
-    portin "publisher_port" as pub_port
-    portin "subscriber_port" as sub_port
+package "Messaging Interfaces" {
+  interface "IMessagePublisherService" as IPublisher {
+    + publishEvent(topic: String, event: DomainEvent)
+  }
+  interface "IMessageSubscriptionService" as ISubscriber {
+    + subscribeToTopic(topic: String, handler)
+  }
 }
 
-' External Components (Sample)
-component "ApplicationService" as AppService
-component "ConsumerService" as Consumer
+package "Messaging Implementation" {
+  component "MessageBrokerComponent" as MessageBroker
+  note bottom of MessageBroker : Concurrent topic routing + thread pool dispatch\nimplements publisher & subscription ports
+}
 
-' Relationships
+package "Domain Events" {
+  interface "DomainEvent" as DomainEvent
+  class "UserRegisteredEvent" as UserRegisteredEvent
+  class "BranchPreferenceCreatedEvent" as BranchPreferenceCreatedEvent
+  class "TaskSubmittedEvent" as TaskSubmittedEvent
+  class "TaskConfirmedEvent" as TaskConfirmedEvent
+  class "EquipmentFaultDetectedEvent" as EquipmentFaultDetectedEvent
+  class "AccessAttemptEvent" as AccessAttemptEvent
+}
+
+package "Repository Ports" {
+  interface "IAuthRepository" as IAuthRepo
+  interface "IHelperRepository" as IHelperRepo
+  interface "ISearchRepository" as ISearchRepo
+  interface "IMonitorRepository" as IMonitorRepo
+  interface "IAccessVectorRepository" as IAccessRepo
+}
+
+package "Repository Implementations" {
+  component "AuthRepositoryImpl" as AuthRepoImpl
+  component "HelperRepositoryImpl" as HelperRepoImpl
+  component "SearchRepositoryImpl" as SearchRepoImpl
+  component "MonitorRepositoryImpl" as MonitorRepoImpl
+  component "AccessVectorRepositoryImpl" as AccessVectorRepoImpl
+  note bottom of AuthRepoImpl : DB_AUTH DAL
+  note bottom of HelperRepoImpl : DB_HELPER DAL
+  note bottom of SearchRepoImpl : DB_SEARCH / Branch index DAL
+  note bottom of MonitorRepoImpl : DB_MONITOR DAL
+  note bottom of AccessVectorRepoImpl : DS-02 face vector storage
+}
+
+database "Shared DataSource" as DataSource
+
+' Messaging relationships
 MessageBroker ..|> IPublisher
 MessageBroker ..|> ISubscriber
-AppService --> pub_port
-Consumer --> sub_port
-pub_port --> IPublisher
-sub_port --> ISubscriber
+IPublisher ..> DomainEvent : payload
+ISubscriber ..> DomainEvent : payload
 
-' Notes
-note right of MessageBroker
-  Implements asynchronous message handling:
-  - Topic-based message routing (by event type)
-  - Thread pool for concurrent message processing
-  - Maintains subscriber list per topic
-end note
+' Repository relationships
+AuthRepoImpl ..|> IAuthRepo
+HelperRepoImpl ..|> IHelperRepo
+SearchRepoImpl ..|> ISearchRepo
+MonitorRepoImpl ..|> IMonitorRepo
+AccessVectorRepoImpl ..|> IAccessRepo
 
-note right of DomainEvent
-  Base class for all
-  domain events
-end note
+' DataSource wiring
+AuthRepoImpl --> DataSource
+HelperRepoImpl --> DataSource
+SearchRepoImpl --> DataSource
+MonitorRepoImpl --> DataSource
+AccessVectorRepoImpl --> DataSource
 
 legend right
-  Message Broker Component
-  - Asynchronous Communication
-  - Publisher/Subscriber Pattern
-  - Thread Pool Management
-  - Message Persistence
-  - Events: UserRegistered, BranchPreferenceCreated, TaskConfirmed,
-            EquipmentFaultDetected, AccessAttempt
-  - Topics: users, preferences, rewards, faults, access
+  Message Broker module
+  - IPublisher / ISubscriber contracts + implementation
+  - Domain events routed asynchronously
+  Persistence adapters
+  - RepositoryImpl classes for each service
+  - All rely on injected JDBC DataSource
 end legend
 
 @enduml

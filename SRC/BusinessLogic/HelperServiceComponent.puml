@@ -36,7 +36,7 @@ package "Helper Service" as HS {
     + subscribeToTopic(topic: String, handler)
   }
 
-  interface "IPanDokuModelService" as IPanDoku {
+  interface "IAIPanDokuService" as IAIPanDoku {
     + requestInitialPanDoku(taskId: Long, imageUrl: String)
   }
   ' Responsibilities (single-line notes per guide)
@@ -44,15 +44,13 @@ package "Helper Service" as HS {
   note bottom of IRepo : Persistence contract (DB_HELPER)
   note bottom of IPub : Message broker publishing
   note bottom of ISub : Broker subscription client
-  note bottom of IPanDoku : AI review request client
+  note bottom of IAIPanDoku : AI review request client
 
   package "Service Layer" {
-    component "HelperService" as HelperService
     component "TaskManagementManager" as TMM
     component "RewardConfirmationManager" as RCM
     component "AIPanDokuConsumer" as APC
     component "RewardUpdateConsumer" as RUC
-    note bottom of HelperService : Responsibilities: API facade, orchestrate workflows
     note bottom of TMM : Responsibilities: Task submission, AI request
     note bottom of RCM : Responsibilities: Approval, balance update, publish event
     note bottom of APC : Responsibilities: Subscribe to tasks.submitted, call MLOps model, persist result
@@ -74,20 +72,15 @@ package "Events" {
 
 
 ' Provided/Required relationships
-HelperService ..|> IAPI
 TMM -( IRepo
-TMM -( IPanDoku
+TMM -( IAIPanDoku
 RCM -( IRepo
 RCM -( IPub
 APC -( ISub
-APC -( IPanDoku
+APC -( IAIPanDoku
 APC -( IRepo
 RUC -( ISub
 RUC -( IRepo
-
-' Internal interactions
-HelperService --> TMM : "registerTaskSubmission()"
-HelperService --> RCM : "handleTaskConfirmation()"
 
 ' Ports wiring
 api_in --> IAPI : "API calls"
