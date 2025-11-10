@@ -1,6 +1,6 @@
 package com.smartfitness.messaging;
 
-import com.smartfitness.event.DomainEvent;
+import com.smartfitness.event.IDomainEvent;
 
 /**
  * IMessagePublisherService: Application Service가 Message Broker로 이벤트를 발행하기 위한 포트입니다.
@@ -12,5 +12,5 @@ public interface IMessagePublisherService {
      * @param topic 발행할 메시지의 주제 (예: "faults", "rewards", "preferences")
      * @param event 발행할 도메인 이벤트 객체
      */
-    void publishEvent(String topic, DomainEvent event);
+    void publishEvent(String topic, IDomainEvent event);
 }

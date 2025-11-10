@@ -1,0 +1,123 @@
+@startuml
+' MLOpsServiceComponent.puml
+
+package "Interface Layer" {
+  ' API 인터페이스
+  interface ITrainingTriggerApi
+  interface IModelDeploymentApi
+
+  ' API 구현 컴포넌트
+  component TrainingTriggerApiImpl
+  component ModelDeploymentApiImpl
+  
+  ITrainingTriggerApi -- TrainingTriggerApiImpl
+  IModelDeploymentApi -- ModelDeploymentApiImpl
+}
+
+package "Business Layer" {
+  ' 상위 레이어로 연결되는 인터페이스
+  interface ITrainingTriggerService
+  interface IModelDeploymentService
+  interface ITrainingPipelineService
+  interface IModelVerificationService
+  interface IDataManagementService
+
+  ' 비즈니스 컴포넌트
+  component TrainingManager
+  component DeploymentService
+  component TrainingPipelineOrchestrator
+  component ModelVerificationService
+  component DataManagementService
+
+  ' 중개자 컴포넌트
+  component DataCollector
+  component DataPersistenceManager
+  component AccuracyVerifier
+  component PerformanceVerifier
+  
+  ' 서비스 구현
+  ITrainingTriggerService -- TrainingManager
+  IModelDeploymentService -- DeploymentService
+  ITrainingPipelineService -- TrainingPipelineOrchestrator
+  IModelVerificationService -- ModelVerificationService
+  IDataManagementService -- DataManagementService
+
+  ' 내부 연결
+  TrainingManager .( ITrainingPipelineService
+  TrainingPipelineOrchestrator .( IModelVerificationService
+  TrainingPipelineOrchestrator .( IDataManagementService
+  TrainingPipelineOrchestrator .( IModelDeploymentService
+  
+  ' 중개자 연결
+  DataManagementService -- DataCollector
+  DataManagementService -- DataPersistenceManager
+  ModelVerificationService -- AccuracyVerifier
+  ModelVerificationService -- PerformanceVerifier
+  
+  ' 하위 레이어로 연결되는 인터페이스
+  interface ITrainingEventHandler
+  interface IDeploymentEventHandler
+  
+  ITrainingEventHandler -- TrainingManager
+  IDeploymentEventHandler -- DeploymentService
+}
+
+package "System Interface Layer" {
+  ' 시스템 인터페이스
+  interface IModelDataRepository
+  interface ITrainingDataRepository
+  interface IMessagePublisherService
+  interface IMessageSubscriptionService
+  interface IFaceModelClient
+  interface IAuthRepository
+  interface IHelperRepository
+  
+  ' 시스템 컴포넌트
+  component ModelDataRepositoryImpl
+  component TrainingDataRepositoryImpl
+  component MessageBrokerComponent
+  component FaceModelClientAdapter
+  component AuthRepositoryAdapter
+  component HelperRepositoryAdapter
+  
+  ' 저장소
+  database ModelDatabase
+  database TrainingDataStore
+  
+  ' 시스템 구현
+  IModelDataRepository -- ModelDataRepositoryImpl
+  ITrainingDataRepository -- TrainingDataRepositoryImpl
+  IMessagePublisherService -- MessageBrokerComponent
+  IMessageSubscriptionService -- MessageBrokerComponent
+  IFaceModelClient -- FaceModelClientAdapter
+  IAuthRepository -- AuthRepositoryAdapter
+  IHelperRepository -- HelperRepositoryAdapter
+  
+  ModelDataRepositoryImpl ..( ModelDatabase
+  TrainingDataRepositoryImpl ..( TrainingDataStore
+}
+
+' 패키지 외부 연결
+' Interface Layer -> Business Layer
+TrainingTriggerApiImpl ..( ITrainingTriggerService
+ModelDeploymentApiImpl ..( IModelDeploymentService
+
+' Business Layer -> System Interface Layer
+DataCollector ..( IAuthRepository : <<read-only>>
+DataCollector ..( IHelperRepository : <<read-only>>
+DataManagementService ..( IModelDataRepository : <<persist>>
+DataManagementService ..( ITrainingDataRepository : <<persist>>
+DeploymentService ..( IModelDataRepository : <<read>>
+DeploymentService ..( IFaceModelClient : <<use>>
+
+' Message Broker 연결
+TrainingPipelineOrchestrator ..( IMessagePublisherService : <<publish>>
+DeploymentService ..( IMessagePublisherService : <<publish>>
+ModelVerificationService ..( IMessagePublisherService : <<publish>>
+TrainingManager ..( IMessageSubscriptionService : <<subscribe>>
+
+' Event Handler 연결
+MessageBrokerComponent ..( ITrainingEventHandler : <<IDomainEvent>>
+MessageBrokerComponent ..( IDeploymentEventHandler : <<IDomainEvent>>
+
+@enduml

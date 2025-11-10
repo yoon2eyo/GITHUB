@@ -1,94 +1,91 @@
 @startuml
-!pragma layout smetana
-allowmixing
-skinparam componentStyle rectangle
-skinparam backgroundColor transparent
-skinparam packageStyle rectangle
-skinparam portStyle solid
-skinparam interfaceStyle rectangle
+' AuthService_component.puml (가이드 준수)
 
-title Auth Service - Component Diagram
-
-package "Auth Service" as AS {
-  portin "api_in" as api_in
-  portout "events" as events
-
-  ' Provided API
-  interface "IAuthServiceApi" as IAPI {
-    + login(credentials: UserCredentials): AuthToken
-    + validateToken(token: String): boolean
-    + registerUser(details: RegistrationDetails): void
-  }
-
-  ' Required interfaces
-  interface "IAuthRepository" as IRepo {
-    + findByUsername(username: String): Optional<UserAccount>
-    + saveUser(user: UserAccount)
-    + loadPasswordHash(userId: String): String
-  }
-
-  interface "ICreditCardVerificationService" as ICCV {
-    + verifyIdentity(cardDetails: String, userId: String): boolean
-  }
-
-  interface "IMessagePublisherService" as IPub {
-    + publishEvent(topic: String, event: DomainEvent)
-  }
-
-  package "Service Layer" {
-    component "AuthorizationManager" as AM
-    component "TokenService" as TS
-  }
-' Responsibilities (single-line notes)
-note bottom of AM : Responsibilities: Login, token validate, register
-note bottom of TS : Responsibilities: Token issue/validate, password verify
-note bottom of IAPI : Provided auth/account API
-note bottom of IRepo : DB_AUTH access (encapsulated)
-note bottom of ICCV : External credit card identity verification
-note bottom of IPub : Publish domain events
+package "Interface Layer" {
+  interface IAuthServiceApi
+  interface IAuthManagementApi
+  
+  component AuthServiceApiImpl
+  component AuthManagementApiImpl
+  
+  ' API implementations
+  IAuthServiceApi -- AuthServiceApiImpl
+  IAuthManagementApi -- AuthManagementApiImpl
 }
 
-package "Auth Model" {
-  class "AuthToken" as AuthToken
-  class "UserCredentials" as UserCredentials
-  class "RegistrationDetails" as RegistrationDetails
+package "Business Layer" {
+  interface IAuthenticationService
+  interface IAuthorizationService
+  interface IUserRegistrationService
+  interface IAuthEventConsumer
+  
+  component AuthenticationManager
+  component AuthorizationManager
+  component UserRegistrationManager
+  component AuthEventConsumer
+  
+  ' Service implementations
+  IAuthenticationService -- AuthenticationManager
+  IAuthorizationService -- AuthorizationManager
+  IUserRegistrationService -- UserRegistrationManager
+  IAuthEventConsumer -- AuthEventConsumer
+  
+  ' Business layer internal relationships
+  AuthenticationManager ..( IAuthorizationService : <<use>>
+  UserRegistrationManager ..( IAuthenticationService : <<use>>
 }
 
-package "Domain Model" {
-  class "UserAccount" as UserAccount
+package "System Interface Layer" {
+  interface IAuthRepository
+  interface IMessagePublisherService
+  interface IMessageSubscriptionService
+  interface ITokenService
+  interface ICreditCardVerificationService
+  
+  component AuthRepositoryImpl
+  component MessageBrokerComponent
+  component JwtTokenServiceImpl
+  component CreditCardVerificationClient
+  database AuthDatabase
+  
+  ' System interface implementations
+  IAuthRepository -- AuthRepositoryImpl
+  IMessagePublisherService -- MessageBrokerComponent
+  IMessageSubscriptionService -- MessageBrokerComponent
+  ITokenService -- JwtTokenServiceImpl
+  ICreditCardVerificationService -- CreditCardVerificationClient
+  
+  ' System dependencies
+  AuthRepositoryImpl ..( AuthDatabase
+  MessageBrokerComponent ..( IAuthEventConsumer : <<IDomainEvent>>
 }
 
-package "Events" {
-  class "DomainEvent" as DomainEvent
-  class "UserRegisteredEvent" as UserRegisteredEvent
-}
+' 패키지 외부 연결
+' Interface Layer -> Business Layer
+AuthServiceApiImpl ..( IAuthenticationService : <<use>>
+AuthServiceApiImpl ..( IAuthorizationService : <<use>>
+AuthManagementApiImpl ..( IUserRegistrationService : <<use>>
 
+' Business Layer -> Message Broker 연결
+AuthenticationManager ..( IMessagePublisherService : <<publish>>
+AuthorizationManager ..( IMessagePublisherService : <<publish>>
+UserRegistrationManager ..( IMessagePublisherService : <<publish>>
+AuthEventConsumer ..( IMessageSubscriptionService : <<subscribe>>
 
-' Provided/Required relationships
-AM ..|> IAPI
-AM -( IRepo
-AM -( ICCV
-AM -( IPub
-
-' Internal interactions
-AM --> TS : "issue/validate token"
-
-' Ports wiring
-api_in --> IAPI : "auth endpoints"
-IPub --> events : "publishEvent(topic, event)"
-
-' Model/event usage
-IAPI ..> AuthToken : uses
-IAPI ..> UserCredentials : uses
-IAPI ..> RegistrationDetails : uses
-IRepo ..> UserAccount : uses
-IPub ..> DomainEvent : uses
+' Business Layer -> System Interface Layer
+AuthenticationManager ..( IAuthRepository : <<persist>>
+AuthenticationManager ..( ITokenService : <<use>>
+AuthenticationManager ..( ICreditCardVerificationService : <<HTTP>>
+AuthorizationManager ..( IAuthRepository : <<persist>>
+UserRegistrationManager ..( IAuthRepository : <<persist>>
+AuthEventConsumer ..( IAuthRepository : <<persist>>
 
 legend right
   Auth Service structure
-  - Provided facade for auth/account
-  - Repo + credit card verification dependencies
-  - Emits UserRegisteredEvent to broker
+  - Authentication and authorization services
+  - User registration and management
+  - Token-based security with JWT
+  - Event-driven updates for auth state changes
 end legend
 
 @enduml

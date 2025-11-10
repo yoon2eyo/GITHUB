@@ -1,111 +1,81 @@
 @startuml
-!pragma layout smetana
-allowmixing
-skinparam componentStyle rectangle
-skinparam backgroundColor transparent
-skinparam packageStyle rectangle
-skinparam portStyle solid
-skinparam interfaceStyle rectangle
+' BranchContentService_component.puml (가이드 준수)
 
-title Branch Content Service - Component Diagram
-
-package "Branch Content Service" as SS {
-  portin "api_in" as api_in
-  portin "broker_in" as broker_in
-  portout "events" as events
-
-  ' Provided API
-  interface "ISearchServiceApi" as IAPI {
-    + searchBranches(query: SearchQuery, customerId: Long): List<BranchRecommendation>
-    + registerContent(content: String, sourceId: Long, type: ContentType): void
-  }
-
-  ' Required interfaces
-  interface "ISearchRepository" as IRepo {
-    + executeMatchQuery(keywords: List<String>): List<BranchRecommendation>
-    + saveCustomerPreference(customerId: Long, prefs: List<String>)
-    + saveBranchPreference(branchId: Long, prefs: List<String>)
-  }
-  interface "ILLMAnalysisService" as ILLM {
-    + analyzeTextForPreferences(text: String): List<String>
-  }
-  interface "IMessagePublisherService" as IPub {
-    + publishEvent(topic: String, event: DomainEvent)
-  }
-  interface "IMessageSubscriptionService" as ISub {
-    + subscribeToTopic(topic: String, handler)
-  }
-
-  package "Service Layer" {
-    component "BranchContentService" as BranchContentService
-    component "PreferenceMatchConsumer" as PreferenceMatchConsumer
-    component "LlmKeywordExtractionStage" as LlmKeywordExtractionStage
-    component "MatchIndexUpdateStage" as MatchIndexUpdateStage
-    component "BranchPreferenceIndex" as BranchPreferenceIndex
-    component "PreferenceMatchScheduler" as PreferenceMatchScheduler
-    component "SchedulingPolicyWindow" as SchedulingPolicyWindow
-  }
-' Responsibilities (single-line notes)
-note bottom of BranchContentService : Responsibilities: LLM analysis, save prefs, fast match
-note bottom of LlmKeywordExtractionStage : Responsibilities: Invoke external LLM, normalize tokens
-note bottom of MatchIndexUpdateStage : Responsibilities: Persist customer/branch keywords + update index
-note bottom of BranchPreferenceIndex : Responsibilities: Optimized search index for 500 req/min (QAS-03)
-note bottom of PreferenceMatchScheduler : Responsibilities: Drain buffered events, run bulk matches within 3s SLA
-note bottom of SchedulingPolicyWindow : Responsibilities: Enforce sliding windows for batch execution
-note bottom of PreferenceMatchConsumer : Responsibilities: Subscribe and run low-priority matching
-note bottom of IAPI : Provided API for search/register
-note bottom of IRepo : DB_SEARCH + search engine abstraction
-note bottom of ILLM : External LLM preference extraction
-note bottom of IPub : Publish preference events
-note bottom of ISub : Subscribe to broker preference topic
-
+package "Interface Layer" {
+  interface IBranchContentServiceApi
+  component BranchContentServiceApiImpl
+  IBranchContentServiceApi -- BranchContentServiceApiImpl
 }
 
-package "Search Model" {
-  class "SearchQuery" as SearchQuery
-  class "BranchRecommendation" as BranchRecommendation
-  class "ContentType" as ContentType
+package "Business Layer" {
+  interface IContentAnalysisService
+  interface IPreferenceMatchService
+  interface IKeywordExtractionService
+  interface IPreferenceEventConsumer
+  
+  component BranchContentService
+  component LlmKeywordExtractionManager
+  component PreferenceMatchManager
+  component ContentAnalysisManager
+  component PreferenceMatchScheduler
+  component PreferenceMatchConsumer
+  component BranchPreferenceIndex
+  
+  ' Service implementations
+  IContentAnalysisService -- ContentAnalysisManager
+  IPreferenceMatchService -- PreferenceMatchManager
+  IKeywordExtractionService -- LlmKeywordExtractionManager
+  IPreferenceEventConsumer -- PreferenceMatchConsumer
+
+  ' BranchContentService relationships
+  BranchContentService ..( IContentAnalysisService : <<use>>
+  BranchContentService ..( IPreferenceMatchService : <<use>>
+  IBranchContentServiceApi -- BranchContentService
+  
+  ' Business layer internal relationships
+  PreferenceMatchManager -- BranchPreferenceIndex
+  PreferenceMatchScheduler ..( IPreferenceMatchService : <<use>>
+  ContentAnalysisManager ..( IPreferenceMatchService : <<use>>
+  
+  ' LLM Keyword Extraction relationships
+  ContentAnalysisManager ..( IKeywordExtractionService : <<use>>
+  LlmKeywordExtractionManager ..( IContentAnalysisService : <<notify>>
+}
+package "System Interface Layer" {
+  interface ISearchRepository
+  interface ILLMAnalysisServiceApi
+  interface IMessagePublisherService
+  interface IMessageSubscriptionService
+  
+  component SearchRepositoryImpl
+  component LLMAnalysisServiceClient
+  component MessageBrokerComponent
+  database SearchDatabase
+  
+  ' System interface implementations
+  ISearchRepository -- SearchRepositoryImpl
+  ILLMAnalysisServiceApi -- LLMAnalysisServiceClient
+  IMessagePublisherService -- MessageBrokerComponent
+  IMessageSubscriptionService -- MessageBrokerComponent
+  
+  ' System dependencies
+  SearchRepositoryImpl ..( SearchDatabase
+  MessageBrokerComponent ..( IPreferenceEventConsumer : <<IDomainEvent>>
 }
 
-package "Events" {
-  class "DomainEvent" as DomainEvent
-  class "BranchPreferenceCreatedEvent" as BranchPreferenceCreatedEvent
-}
+' 패키지 외부 연결
+' Interface Layer -> Business Layer
+BranchContentServiceApiImpl ..( IBranchContentServiceApi : <<use>>
 
-' Provided/Required relationships
-BranchContentService ..|> IAPI
-BranchContentService --> LlmKeywordExtractionStage : extractKeywords()
-LlmKeywordExtractionStage -( ILLM
-BranchContentService --> MatchIndexUpdateStage : persistKeywords()
-MatchIndexUpdateStage -( IRepo
-MatchIndexUpdateStage --> BranchPreferenceIndex : updateIndex()
-BranchContentService -( IPub
-PreferenceMatchConsumer -( ISub
-PreferenceMatchScheduler -( IRepo
+' Business Layer -> Message Broker 연결
+ContentAnalysisManager ..( IMessagePublisherService : <<publish>>
+PreferenceMatchManager ..( IMessagePublisherService : <<publish>>
+PreferenceMatchConsumer ..( IMessageSubscriptionService : <<subscribe>>
 
-' Internal interactions
-PreferenceMatchConsumer --> BranchContentService : "invoke matching as needed"
-PreferenceMatchScheduler --> PreferenceMatchConsumer : drainBufferedEvents()
-PreferenceMatchScheduler --> SchedulingPolicyWindow : checkWindow()
-PreferenceMatchScheduler --> BranchContentService : batchMatch()
-
-' Ports wiring
-api_in --> IAPI : "search/register"
-IPub --> events : "publishEvent(topic, event)"
-broker_in --> ISub : "preferences topic"
-
-' Model/event usage
-IAPI ..> SearchQuery : uses
-IAPI ..> BranchRecommendation : uses
-IAPI ..> ContentType : uses
-IPub ..> DomainEvent : uses
-BranchContentService ..> BranchPreferenceCreatedEvent : emits
-
-legend right
-  Branch Content Service structure
-  - Provided search API with LLM + preference indexing stages
-  - Scheduler + window ensure 500 preference lookups/min within 3s
-  - Event-driven preference matching, broker publish/subscribe
-end legend
+' Business Layer -> System Interface Layer
+LlmKeywordExtractionManager ..( ILLMAnalysisServiceApi : <<HTTP>>
+ContentAnalysisManager ..( ISearchRepository : <<persist>>
+PreferenceMatchManager ..( ISearchRepository : <<persist>>
+PreferenceMatchConsumer ..( ISearchRepository : <<persist>>
 
 @enduml

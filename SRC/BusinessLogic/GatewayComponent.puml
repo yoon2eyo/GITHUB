@@ -1,78 +1,138 @@
 @startuml
-!pragma layout smetana
-allowmixing
-skinparam componentStyle rectangle
-skinparam backgroundColor transparent
-skinparam packageStyle rectangle
-skinparam portStyle solid
-skinparam interfaceStyle rectangle
+' GatewayComponent.puml
 
-title API Gateway - Component Diagram
+package "Interface Layer" {
+  ' API 인터페이스
+  interface IApiGatewayEntry
+  interface IApiGatewayManagement
 
-package "API Gateway" as GW {
-  portin "ingress" as ingress
-  portout "downstream" as downstream
-
-  ' Provided API
-  interface "IApiGatewayEntry" as IEntry {
-    + routeRequest(request: ClientRequest): ServiceResponse
-  }
-
-  ' Required interfaces
-  interface "IAuthenticationClient" as IAuth {
-    + authenticate(userId: String, password: String): AuthToken
-    + validateToken(token: String): boolean
-  }
-
-  interface "ServiceDiscovery" as IDisc {
-    + resolveAndBalance(servicePath: String): String
-    + getServiceInstances(servicePath: String): List<String>
-  }
-
-  package "Service Layer" {
-    component "RequestRouter" as Router
-    component "InternalClientManager" as ICM
-  }
-' Responsibilities (single-line notes)
-note bottom of Router : Responsibilities: Front controller, routing, security checks
-note bottom of ICM : Responsibilities: Downstream client mgmt, proxy
-note bottom of IEntry : Provided entry API
-note bottom of IAuth : Auth token issue/validation
-note right of Router : Public endpoints allowed: /auth/login, /auth/register
+  ' API 구현 컴포넌트
+  component ApiGatewayApiImpl
+  component GatewayManagementApiImpl
+  
+  IApiGatewayEntry -- ApiGatewayApiImpl
+  IApiGatewayManagement -- GatewayManagementApiImpl
 }
 
-package "Gateway Model" {
-  class "ClientRequest" as ClientRequest
-  class "ServiceResponse" as ServiceResponse
+package "Business Layer" {
+  ' 상위 레이어로 연결되는 인터페이스
+  interface IRequestRoutingService
+  interface IRequestProcessingService
+  interface ISecurityService
+  interface IServiceDiscoveryService
+  interface ILoadBalancingService
+
+  ' 보안 관련 세부 인터페이스
+  interface IAuthenticationService
+  interface IAuthorizationService
+  interface ISecurityPolicyService
+  interface IRequestForwardingService
+
+  ' 비즈니스 컴포넌트
+  component RequestRouter
+  component RequestProcessor
+  component SecurityManager
+  component ServiceDiscoveryManager
+  component LoadBalancer
+  
+  ' 중개자 컴포넌트
+  component AuthenticationManager
+  component AuthorizationManager
+  component SecurityPolicyManager
+  component RequestForwarder
+  
+  ' 내부 구현 컴포넌트
+  component RequestSignatureVerifier
+  component NetworkZonePolicy
+  component InternalClientManager
+  
+  ' 서비스 구현
+  IRequestRoutingService -- RequestRouter
+  IRequestProcessingService -- RequestProcessor
+  ISecurityService -- SecurityManager
+  IServiceDiscoveryService -- ServiceDiscoveryManager
+  ILoadBalancingService -- LoadBalancer
+
+  ' 세부 서비스 구현
+  IAuthenticationService -- AuthenticationManager
+  IAuthorizationService -- AuthorizationManager
+  ISecurityPolicyService -- SecurityPolicyManager
+  IRequestForwardingService -- RequestForwarder
+
+  ' 계층화된 연결
+  RequestRouter .( IRequestProcessingService
+  RequestProcessor .( ISecurityService
+  RequestProcessor .( IServiceDiscoveryService
+  RequestProcessor .( ILoadBalancingService
+  
+  ' SecurityManager 내부 연결
+  SecurityManager .( IAuthenticationService
+  SecurityManager .( IAuthorizationService
+  SecurityManager .( ISecurityPolicyService
+  
+  ' RequestProcessor 내부 연결  
+  RequestProcessor .( IRequestForwardingService
+  
+  ' 하위 레이어로 연결되는 인터페이스
+  interface ISecurityPolicyHandler
+  interface IRequestForwardingHandler
+  
+  ISecurityPolicyHandler -- SecurityManager
+  IRequestForwardingHandler -- RequestForwarder
 }
 
-package "Domain Model" {
-  class "AuthToken" as AuthToken
+package "System Interface Layer" {
+  ' 시스템 인터페이스
+  interface IServiceRegistry
+  interface IAuthenticationClient
+  interface IAuthorizationClient
+  interface IMessagePublisherService
+  interface IMessageSubscriptionService
+  interface ICircuitBreaker
+  interface IRateLimiter
+  
+  ' 시스템 컴포넌트
+  component ServiceRegistryImpl
+  component AuthenticationClientAdapter
+  component AuthorizationClientAdapter
+  component MessageBrokerComponent
+  component CircuitBreakerImpl
+  component RateLimiterImpl
+  
+  ' 시스템 구현
+  IServiceRegistry -- ServiceRegistryImpl
+  IAuthenticationClient -- AuthenticationClientAdapter
+  IAuthorizationClient -- AuthorizationClientAdapter
+  IMessagePublisherService -- MessageBrokerComponent
+  IMessageSubscriptionService -- MessageBrokerComponent
+  ICircuitBreaker -- CircuitBreakerImpl
+  IRateLimiter -- RateLimiterImpl
 }
 
+' 패키지 외부 연결
+' Interface Layer -> Business Layer
+ApiGatewayApiImpl ..( IRequestRoutingService
+GatewayManagementApiImpl ..( IServiceDiscoveryService
 
-' Provided/Required relationships
-Router ..|> IEntry
-Router -( IAuth
-ICM -( IDisc
+' Business Layer -> System Interface Layer
+AuthenticationManager ..( IAuthenticationClient : <<use>>
+AuthorizationManager ..( IAuthorizationClient : <<use>>
+ServiceDiscoveryManager ..( IServiceRegistry : <<use>>
+LoadBalancer ..( ICircuitBreaker : <<use>>
+LoadBalancer ..( IRateLimiter : <<use>>
 
-' Internal interactions
-Router --> ICM : "forwardRequest()"
+' Security Components
+SecurityPolicyManager -- RequestSignatureVerifier : <<use>>
+SecurityPolicyManager -- NetworkZonePolicy : <<use>>
+RequestForwarder -- InternalClientManager : <<use>>
 
-' Ports wiring
-ingress --> IEntry : "routeRequest"
-ICM --> downstream : "proxy to services"
+' Message Broker 연결
+RequestProcessor ..( IMessagePublisherService : <<publish>>
+SecurityManager ..( IMessagePublisherService : <<publish>>
+ServiceDiscoveryManager ..( IMessageSubscriptionService : <<subscribe>>
 
-' Model usage
-IEntry ..> ClientRequest : uses
-IEntry ..> ServiceResponse : uses
-IAuth ..> AuthToken : uses
-
-legend right
-  API Gateway structure
-  - Front controller provided entry
-  - Authentication/authorization dependencies
-  - Internal client manager proxies downstream
-end legend
+' Event Handler 연결
+MessageBrokerComponent ..( ISecurityPolicyHandler : <<IDomainEvent>>
+MessageBrokerComponent ..( IRequestForwardingHandler : <<IDomainEvent>>
 
 @enduml

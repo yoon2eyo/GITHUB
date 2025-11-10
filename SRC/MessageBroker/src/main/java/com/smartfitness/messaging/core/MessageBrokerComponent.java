@@ -1,6 +1,6 @@
 package com.smartfitness.messaging.core;
 
-import com.smartfitness.event.DomainEvent;
+import com.smartfitness.event.IDomainEvent;
 import com.smartfitness.messaging.IMessagePublisherService;
 import com.smartfitness.messaging.IMessageSubscriptionService;
 import java.util.List;
@@ -20,20 +20,20 @@ public class MessageBrokerComponent implements
     IMessageSubscriptionService,
     AutoCloseable {
 
-    private final Map<String, List<Consumer<DomainEvent>>> topicSubscribers = new ConcurrentHashMap<>();
+    private final Map<String, List<Consumer<IDomainEvent>>> topicSubscribers = new ConcurrentHashMap<>();
     private final ExecutorService executor = Executors.newCachedThreadPool();
 
     /**
      * Publish an event to all subscribers registered on the topic.
      */
     @Override
-    public void publishEvent(String topic, DomainEvent event) {
-        List<Consumer<DomainEvent>> handlers = topicSubscribers.get(topic);
+    public void publishEvent(String topic, IDomainEvent event) {
+        List<Consumer<IDomainEvent>> handlers = topicSubscribers.get(topic);
         if (handlers == null) {
             return;
         }
 
-        for (Consumer<DomainEvent> handler : handlers) {
+        for (Consumer<IDomainEvent> handler : handlers) {
             executor.submit(() -> handler.accept(event));
         }
     }
@@ -42,8 +42,22 @@ public class MessageBrokerComponent implements
      * Register a consumer for the given topic.
      */
     @Override
-    public void subscribeToTopic(String topic, Consumer<DomainEvent> eventHandler) {
+    public void subscribeToTopic(String topic, Consumer<IDomainEvent> eventHandler) {
         topicSubscribers.computeIfAbsent(topic, key -> new CopyOnWriteArrayList<>()).add(eventHandler);
+    }
+
+    /**
+     * Unregister a consumer from the given topic.
+     */
+    @Override
+    public void unsubscribeFromTopic(String topic, Consumer<IDomainEvent> eventHandler) {
+        List<Consumer<IDomainEvent>> handlers = topicSubscribers.get(topic);
+        if (handlers != null) {
+            handlers.remove(eventHandler);
+            if (handlers.isEmpty()) {
+                topicSubscribers.remove(topic);
+            }
+        }
     }
 
     @Override

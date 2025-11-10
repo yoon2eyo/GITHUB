@@ -1,0 +1,108 @@
+@startuml
+' RealTimeAccessService_component.puml (가이드 준수)
+
+package "Interface Layer" {
+  interface IAccessControlApi
+  interface IFaceVerificationApi
+  
+  component AccessControlApiImpl
+  component FaceVerificationApiImpl
+  
+  IAccessControlApi -- AccessControlApiImpl
+  IFaceVerificationApi -- FaceVerificationApiImpl
+}
+
+package "Business Layer" {
+  ' Core business interfaces
+  interface IAccessVerificationService
+  interface IFaceModelService
+  interface IFaceVerificationService
+  
+  ' Business components
+  component AccessVerificationManager
+  component FaceModelManager
+  component AccessEventProcessor
+  component FaceModelProcessor
+  
+  ' Service implementations
+  IAccessVerificationService -- AccessVerificationManager
+  IFaceModelService -- FaceModelManager
+  IFaceVerificationService -- FaceModelManager
+  
+  ' Event handler interfaces (하위 레이어와 연결되는 인터페이스)
+  interface IAccessEventHandler
+  interface IFaceModelEventHandler
+  
+  ' Event handler implementations
+  IAccessEventHandler -- AccessEventProcessor
+  IFaceModelEventHandler -- FaceModelProcessor
+  
+  ' Business layer relationships
+  AccessVerificationManager ..( IFaceVerificationService : <<use>>
+  AccessEventProcessor ..( IAccessVerificationService : <<use>>
+  FaceModelProcessor ..( IFaceModelService : <<use>>
+
+  note right of AccessVerificationManager
+    Validates access attempts using
+    face recognition and membership data
+  end note
+
+  note right of FaceModelManager
+    Manages face recognition models
+    and verification processes
+  end note
+}
+
+package "System Interface Layer" {
+  interface IAccessRepository
+  interface IFaceModelRepository
+  interface IMessagePublisherService
+  interface IMessageSubscriptionService
+  interface IMLOpsService
+  
+  component AccessRepositoryImpl
+  component FaceModelRepositoryImpl
+  component MessageBrokerComponent
+  component MLOpsServiceAdapter
+  database AccessDatabase
+  database FaceModelDatabase
+  
+  ' System interface implementations
+  IAccessRepository -- AccessRepositoryImpl
+  IFaceModelRepository -- FaceModelRepositoryImpl
+  IMessagePublisherService -- MessageBrokerComponent
+  IMessageSubscriptionService -- MessageBrokerComponent
+  IMLOpsService -- MLOpsServiceAdapter
+  
+  ' System dependencies
+  AccessRepositoryImpl ..( AccessDatabase
+  FaceModelRepositoryImpl ..( FaceModelDatabase
+  MessageBrokerComponent ..( IAccessEventHandler : <<IDomainEvent>>
+  MessageBrokerComponent ..( IFaceModelEventHandler : <<IDomainEvent>>
+}
+
+' 패키지 외부 연결
+' Interface Layer -> Business Layer
+AccessControlApiImpl ..( IAccessVerificationService : <<use>>
+FaceVerificationApiImpl ..( IFaceModelService : <<use>>
+
+' Business Layer -> System Interface Layer
+AccessVerificationManager ..( IAccessRepository : <<persist>>
+FaceModelManager ..( IFaceModelRepository : <<persist>>
+FaceModelManager ..( IMLOpsService : <<use>>
+
+' Business Layer -> Message Broker 연결
+AccessVerificationManager ..( IMessagePublisherService : <<publish>>
+FaceModelManager ..( IMessagePublisherService : <<publish>>
+AccessEventProcessor ..( IMessageSubscriptionService : <<subscribe>>
+FaceModelProcessor ..( IMessageSubscriptionService : <<subscribe>>
+
+legend right
+  Real-Time Access Service structure
+  - Real-time access control
+  - Face recognition/verification
+  - Event-driven processing
+  - MLOps integration
+end legend
+
+@enduml

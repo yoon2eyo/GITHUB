@@ -1,68 +1,99 @@
 @startuml
-!pragma layout smetana
-allowmixing
-skinparam componentStyle rectangle
-skinparam backgroundColor transparent
-skinparam packageStyle rectangle
-skinparam portStyle solid
-skinparam interfaceStyle rectangle
+' FaceModelServiceComponent.puml
 
-title Face Model Service - Component Diagram
+package "Interface Layer" {
+  ' API 인터페이스
+  interface IFaceModelApi
+  interface IModelTrainingApi
 
-package "Face Model Service" as FMS {
-  portin "realtime_in" as rt_in
-  portin "mlops_in" as ml_in
-
-  interface "IFaceModelService" as IFMS {
-    + calculateSimilarityScore(requested: FaceVector, stored: FaceVector): double
-  }
-
-  interface "IModelManagementPort" as IMMP {
-    + loadNewModel(modelBinary: byte[]): void
-    + rollbackToPreviousModel(): void
-  }
-
-  package "Service Layer" {
-    component "VectorComparisonEngine" as VCE
-    component "ModelLifecycleManager" as MLM
-  }
+  ' API 구현 컴포넌트
+  component FaceModelApiImpl
+  component ModelTrainingApiImpl
+  
+  IFaceModelApi -- FaceModelApiImpl
+  IModelTrainingApi -- ModelTrainingApiImpl
 }
 
-package "Common Model" {
-  class "FaceVector" as FaceVector
+package "Business Layer" {
+  ' 상위 레이어로 연결되는 인터페이스
+  interface IFaceModelManagerService
+  interface IModelTrainingService
+  interface IModelValidationService
+  interface IModelStorageService
+
+  ' 비즈니스 컴포넌트
+  component FaceModelManager
+  component ModelTrainer
+  component ModelValidator
+  component ModelDistributor
+  
+  ' 서비스 구현
+  IFaceModelManagerService -- FaceModelManager
+  IModelTrainingService -- ModelTrainer
+  IModelValidationService -- ModelValidator
+  IModelStorageService -- ModelDistributor
+
+  ' 내부 연결
+  FaceModelManager .( IModelTrainingService
+  FaceModelManager .( IModelValidationService
+  FaceModelManager .( IModelStorageService
+  ModelTrainer .( IModelValidationService
+  
+  ' 하위 레이어로 연결되는 인터페이스
+  interface IModelUpdateEventHandler
+  interface IModelDistributionHandler
+  
+  IModelUpdateEventHandler -- ModelDistributor
+  IModelDistributionHandler -- ModelDistributor
 }
 
-package "MLOps Model" {
-  class "LoadedModel" as LoadedModel
+package "System Interface Layer" {
+  ' 시스템 인터페이스
+  interface IModelRepository
+  interface ITrainingDataRepository
+  interface IMessagePublisherService
+  interface IMessageSubscriptionService
+  interface IMLOpsService
+  
+  ' 시스템 컴포넌트
+  component ModelRepositoryImpl
+  component TrainingDataRepositoryImpl
+  component MessageBrokerComponent
+  component MLOpsServiceAdapter
+  
+  ' 저장소
+  database ModelDatabase
+  database TrainingDataStore
+  
+  ' 시스템 구현
+  IModelRepository -- ModelRepositoryImpl
+  ITrainingDataRepository -- TrainingDataRepositoryImpl
+  IMessagePublisherService -- MessageBrokerComponent
+  IMessageSubscriptionService -- MessageBrokerComponent
+  IMLOpsService -- MLOpsServiceAdapter
+  
+  ModelRepositoryImpl ..( ModelDatabase
+  TrainingDataRepositoryImpl ..( TrainingDataStore
 }
 
-' Responsibilities (single-line notes)
-note right of VCE : Responsibilities: Vector compare, concurrent pipeline per DD-05
-note right of MLM : Responsibilities: Load/rollback models (Hot Swap)
-note right of IFMS : Provided API for similarity scoring
-note right of IMMP : Provided API for model lifecycle
+' 패키지 외부 연결
+' Interface Layer -> Business Layer
+FaceModelApiImpl ..( IFaceModelManagerService
+ModelTrainingApiImpl ..( IModelTrainingService
 
-' Provided interfaces
-VCE ..|> IFMS
-MLM ..|> IMMP
+' Business Layer -> System Interface Layer
+ModelDistributor ..( IModelRepository : <<persist>>
+ModelTrainer ..( ITrainingDataRepository : <<persist>>
+ModelTrainer ..( IMLOpsService : <<use>>
 
-' Internal interaction
-MLM --> VCE : "hot swap active model"
+' Message Broker 연결
+FaceModelManager ..( IMessagePublisherService : <<publish>>
+ModelTrainer ..( IMessagePublisherService : <<publish>>
+ModelValidator ..( IMessagePublisherService : <<publish>>
+ModelDistributor ..( IMessageSubscriptionService : <<subscribe>>
 
-' Ports wiring (external flows)
-rt_in --> IFMS : "calculateSimilarityScore"
-ml_in --> IMMP : "load/rollback"
-
-' Domain/model usage
-IFMS ..> FaceVector : uses
-VCE ..> LoadedModel : uses
-MLM ..> LoadedModel : uses
-
-legend right
-  Face Model Service structure
-  - Provided scoring API
-  - Hot swap lifecycle API
-  - Uses LoadedModel and FaceVector
-end legend
+' Event Handler 연결
+MessageBrokerComponent ..( IModelUpdateEventHandler : <<IDomainEvent>>
+MessageBrokerComponent ..( IModelDistributionHandler : <<IDomainEvent>>
 
 @enduml
