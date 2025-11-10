@@ -1,0 +1,78 @@
+@startuml
+!pragma layout smetana
+allowmixing
+skinparam componentStyle rectangle
+skinparam backgroundColor transparent
+skinparam packageStyle rectangle
+skinparam portStyle solid
+skinparam interfaceStyle rectangle
+
+title API Gateway - Component Diagram
+
+package "API Gateway" as GW {
+  portin "ingress" as ingress
+  portout "downstream" as downstream
+
+  ' Provided API
+  interface "IApiGatewayEntry" as IEntry {
+    + routeRequest(request: ClientRequest): ServiceResponse
+  }
+
+  ' Required interfaces
+  interface "IAuthenticationClient" as IAuth {
+    + authenticate(userId: String, password: String): AuthToken
+    + validateToken(token: String): boolean
+  }
+
+  interface "ServiceDiscovery" as IDisc {
+    + resolveAndBalance(servicePath: String): String
+    + getServiceInstances(servicePath: String): List<String>
+  }
+
+  package "Service Layer" {
+    component "RequestRouter" as Router
+    component "InternalClientManager" as ICM
+  }
+' Responsibilities (single-line notes)
+note bottom of Router : Responsibilities: Front controller, routing, security checks
+note bottom of ICM : Responsibilities: Downstream client mgmt, proxy
+note bottom of IEntry : Provided entry API
+note bottom of IAuth : Auth token issue/validation
+note right of Router : Public endpoints allowed: /auth/login, /auth/register
+}
+
+package "Gateway Model" {
+  class "ClientRequest" as ClientRequest
+  class "ServiceResponse" as ServiceResponse
+}
+
+package "Domain Model" {
+  class "AuthToken" as AuthToken
+}
+
+
+' Provided/Required relationships
+Router ..|> IEntry
+Router -( IAuth
+ICM -( IDisc
+
+' Internal interactions
+Router --> ICM : "forwardRequest()"
+
+' Ports wiring
+ingress --> IEntry : "routeRequest"
+ICM --> downstream : "proxy to services"
+
+' Model usage
+IEntry ..> ClientRequest : uses
+IEntry ..> ServiceResponse : uses
+IAuth ..> AuthToken : uses
+
+legend right
+  API Gateway structure
+  - Front controller provided entry
+  - Authentication/authorization dependencies
+  - Internal client manager proxies downstream
+end legend
+
+@enduml

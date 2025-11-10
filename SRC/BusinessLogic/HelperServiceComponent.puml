@@ -1,0 +1,109 @@
+@startuml
+!pragma layout smetana
+allowmixing
+skinparam componentStyle rectangle
+skinparam backgroundColor transparent
+skinparam packageStyle rectangle
+skinparam portStyle solid
+skinparam interfaceStyle rectangle
+
+title Helper Service - Component Diagram
+
+package "Helper Service" as HS {
+  portin "api_in" as api_in
+  portout "broker_out" as broker_out
+
+  ' Provided API
+  interface "IHelperServiceApi" as IAPI {
+    + registerTaskSubmission(submission: TaskSubmission): TaskRegistrationResult
+    + getHelperBalance(helperId: Long): Optional<HelperBalance>
+    + getTasksForReview(branchId: Long): List<TaskSubmission>
+  }
+
+  ' Required interfaces
+  interface "IHelperRepository" as IRepo {
+    + save(submission: TaskSubmission)
+    + updateTaskStatus(taskId: Long, status: String, score: Double)
+    + updateBalance(helperId: Long, amount: double)
+    + findBalanceByHelperId(helperId: Long): Optional<HelperBalance>
+  }
+
+  interface "IMessagePublisherService" as IPub {
+    + publishEvent(topic: String, event: DomainEvent)
+  }
+
+  interface "IMessageSubscriptionService" as ISub {
+    + subscribeToTopic(topic: String, handler)
+  }
+
+  interface "IPanDokuModelService" as IPanDoku {
+    + requestInitialPanDoku(taskId: Long, imageUrl: String)
+  }
+  ' Responsibilities (single-line notes per guide)
+  note bottom of IAPI : Provided API for helper/admin
+  note bottom of IRepo : Persistence contract (DB_HELPER)
+  note bottom of IPub : Message broker publishing
+  note bottom of ISub : Broker subscription client
+  note bottom of IPanDoku : AI review request client
+
+  package "Service Layer" {
+    component "HelperService" as HelperService
+    component "TaskManagementManager" as TMM
+    component "RewardConfirmationManager" as RCM
+    component "AIPanDokuConsumer" as APC
+    component "RewardUpdateConsumer" as RUC
+    note bottom of HelperService : Responsibilities: API facade, orchestrate workflows
+    note bottom of TMM : Responsibilities: Task submission, AI request
+    note bottom of RCM : Responsibilities: Approval, balance update, publish event
+    note bottom of APC : Responsibilities: Subscribe to tasks.submitted, call MLOps model, persist result
+    note bottom of RUC : Responsibilities: Subscribe to tasks.confirmed, update balances/status
+  }
+}
+
+package "Domain Model" {
+  class "TaskSubmission" as TaskSubmission
+  class "TaskRegistrationResult" as TaskRegistrationResult
+  class "HelperBalance" as HelperBalance
+}
+
+package "Events" {
+  class "DomainEvent" as DomainEvent
+  class "TaskSubmittedEvent" as TaskSubmittedEvent
+  class "TaskConfirmedEvent" as TaskConfirmedEvent
+}
+
+
+' Provided/Required relationships
+HelperService ..|> IAPI
+TMM -( IRepo
+TMM -( IPanDoku
+RCM -( IRepo
+RCM -( IPub
+APC -( ISub
+APC -( IPanDoku
+APC -( IRepo
+RUC -( ISub
+RUC -( IRepo
+
+' Internal interactions
+HelperService --> TMM : "registerTaskSubmission()"
+HelperService --> RCM : "handleTaskConfirmation()"
+
+' Ports wiring
+api_in --> IAPI : "API calls"
+IPub --> broker_out : "publishEvent(topic, event)"
+
+' Domain usage
+IAPI ..> TaskSubmission : uses
+IAPI ..> TaskRegistrationResult : uses
+IAPI ..> HelperBalance : uses
+IPub ..> DomainEvent : uses
+
+legend right
+  Helper Service structure
+  - Provided facade API
+  - Repository, AI, broker publish/subscribe dependencies
+  - Submission and reward managers + async consumers
+end legend
+
+@enduml

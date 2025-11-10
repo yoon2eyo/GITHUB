@@ -1,0 +1,68 @@
+@startuml
+!pragma layout smetana
+allowmixing
+skinparam componentStyle rectangle
+skinparam backgroundColor transparent
+skinparam packageStyle rectangle
+skinparam portStyle solid
+skinparam interfaceStyle rectangle
+
+title Face Model Service - Component Diagram
+
+package "Face Model Service" as FMS {
+  portin "realtime_in" as rt_in
+  portin "mlops_in" as ml_in
+
+  interface "IFaceModelService" as IFMS {
+    + calculateSimilarityScore(requested: FaceVector, stored: FaceVector): double
+  }
+
+  interface "IModelManagementPort" as IMMP {
+    + loadNewModel(modelBinary: byte[]): void
+    + rollbackToPreviousModel(): void
+  }
+
+  package "Service Layer" {
+    component "VectorComparisonEngine" as VCE
+    component "ModelLifecycleManager" as MLM
+  }
+}
+
+package "Common Model" {
+  class "FaceVector" as FaceVector
+}
+
+package "MLOps Model" {
+  class "LoadedModel" as LoadedModel
+}
+
+' Responsibilities (single-line notes)
+note right of VCE : Responsibilities: Vector compare, concurrent pipeline per DD-05
+note right of MLM : Responsibilities: Load/rollback models (Hot Swap)
+note right of IFMS : Provided API for similarity scoring
+note right of IMMP : Provided API for model lifecycle
+
+' Provided interfaces
+VCE ..|> IFMS
+MLM ..|> IMMP
+
+' Internal interaction
+MLM --> VCE : "hot swap active model"
+
+' Ports wiring (external flows)
+rt_in --> IFMS : "calculateSimilarityScore"
+ml_in --> IMMP : "load/rollback"
+
+' Domain/model usage
+IFMS ..> FaceVector : uses
+VCE ..> LoadedModel : uses
+MLM ..> LoadedModel : uses
+
+legend right
+  Face Model Service structure
+  - Provided scoring API
+  - Hot swap lifecycle API
+  - Uses LoadedModel and FaceVector
+end legend
+
+@enduml

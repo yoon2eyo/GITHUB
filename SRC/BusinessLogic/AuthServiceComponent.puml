@@ -1,0 +1,94 @@
+@startuml
+!pragma layout smetana
+allowmixing
+skinparam componentStyle rectangle
+skinparam backgroundColor transparent
+skinparam packageStyle rectangle
+skinparam portStyle solid
+skinparam interfaceStyle rectangle
+
+title Auth Service - Component Diagram
+
+package "Auth Service" as AS {
+  portin "api_in" as api_in
+  portout "events" as events
+
+  ' Provided API
+  interface "IAuthServiceApi" as IAPI {
+    + login(credentials: UserCredentials): AuthToken
+    + validateToken(token: String): boolean
+    + registerUser(details: RegistrationDetails): void
+  }
+
+  ' Required interfaces
+  interface "IAuthRepository" as IRepo {
+    + findByUsername(username: String): Optional<UserAccount>
+    + saveUser(user: UserAccount)
+    + loadPasswordHash(userId: String): String
+  }
+
+  interface "ICreditCardVerificationService" as ICCV {
+    + verifyIdentity(cardDetails: String, userId: String): boolean
+  }
+
+  interface "IMessagePublisherService" as IPub {
+    + publishEvent(topic: String, event: DomainEvent)
+  }
+
+  package "Service Layer" {
+    component "AuthorizationManager" as AM
+    component "TokenService" as TS
+  }
+' Responsibilities (single-line notes)
+note bottom of AM : Responsibilities: Login, token validate, register
+note bottom of TS : Responsibilities: Token issue/validate, password verify
+note bottom of IAPI : Provided auth/account API
+note bottom of IRepo : DB_AUTH access (encapsulated)
+note bottom of ICCV : External credit card identity verification
+note bottom of IPub : Publish domain events
+}
+
+package "Auth Model" {
+  class "AuthToken" as AuthToken
+  class "UserCredentials" as UserCredentials
+  class "RegistrationDetails" as RegistrationDetails
+}
+
+package "Domain Model" {
+  class "UserAccount" as UserAccount
+}
+
+package "Events" {
+  class "DomainEvent" as DomainEvent
+  class "UserRegisteredEvent" as UserRegisteredEvent
+}
+
+
+' Provided/Required relationships
+AM ..|> IAPI
+AM -( IRepo
+AM -( ICCV
+AM -( IPub
+
+' Internal interactions
+AM --> TS : "issue/validate token"
+
+' Ports wiring
+api_in --> IAPI : "auth endpoints"
+IPub --> events : "publishEvent(topic, event)"
+
+' Model/event usage
+IAPI ..> AuthToken : uses
+IAPI ..> UserCredentials : uses
+IAPI ..> RegistrationDetails : uses
+IRepo ..> UserAccount : uses
+IPub ..> DomainEvent : uses
+
+legend right
+  Auth Service structure
+  - Provided facade for auth/account
+  - Repo + credit card verification dependencies
+  - Emits UserRegisteredEvent to broker
+end legend
+
+@enduml

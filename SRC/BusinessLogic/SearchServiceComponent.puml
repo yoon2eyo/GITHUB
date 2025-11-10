@@ -1,0 +1,89 @@
+@startuml
+!pragma layout smetana
+allowmixing
+skinparam componentStyle rectangle
+skinparam backgroundColor transparent
+skinparam packageStyle rectangle
+skinparam portStyle solid
+skinparam interfaceStyle rectangle
+
+title Search Service - Component Diagram
+
+package "Search Service" as SS {
+  portin "api_in" as api_in
+  portin "broker_in" as broker_in
+  portout "events" as events
+
+  ' Provided API
+  interface "ISearchServiceApi" as IAPI {
+    + searchBranches(query: SearchQuery, customerId: Long): List<BranchRecommendation>
+    + registerContent(content: String, sourceId: Long, type: ContentType): void
+  }
+
+  ' Required interfaces
+  interface "ISearchRepository" as IRepo {
+    + executeMatchQuery(keywords: List<String>): List<BranchRecommendation>
+    + saveCustomerPreference(customerId: Long, prefs: List<String>)
+    + saveBranchPreference(branchId: Long, prefs: List<String>)
+  }
+  interface "ILLMAnalysisService" as ILLM {
+    + analyzeTextForPreferences(text: String): List<String>
+  }
+  interface "IMessagePublisherService" as IPub {
+    + publishEvent(topic: String, event: DomainEvent)
+  }
+
+  package "Service Layer" {
+    component "SearchManager" as SM
+    component "PreferenceMatchConsumer" as PMC
+  }
+' Responsibilities (single-line notes)
+note bottom of SM : Responsibilities: LLM analysis, save prefs, fast match
+note bottom of PMC : Responsibilities: Subscribe and run low-priority matching
+note bottom of IAPI : Provided API for search/register
+note bottom of IRepo : DB_SEARCH + search engine abstraction
+note bottom of ILLM : External LLM preference extraction
+note bottom of IPub : Publish preference events
+
+}
+
+package "Search Model" {
+  class "SearchQuery" as SearchQuery
+  class "BranchRecommendation" as BranchRecommendation
+  class "ContentType" as ContentType
+}
+
+package "Events" {
+  class "DomainEvent" as DomainEvent
+  class "BranchPreferenceCreatedEvent" as BranchPreferenceCreatedEvent
+}
+
+' Provided/Required relationships
+SM ..|> IAPI
+SM -( IRepo
+SM -( ILLM
+SM -( IPub
+
+' Internal interactions
+PMC --> SM : "invoke matching as needed"
+
+' Ports wiring
+api_in --> IAPI : "search/register"
+IPub --> events : "publishEvent(topic, event)"
+broker_in --> PMC : "preference topic"
+
+' Model/event usage
+IAPI ..> SearchQuery : uses
+IAPI ..> BranchRecommendation : uses
+IAPI ..> ContentType : uses
+IPub ..> DomainEvent : uses
+SM ..> BranchPreferenceCreatedEvent : emits
+
+legend right
+  Search Service structure
+  - Provided search API
+  - LLM + repository + broker dependencies
+  - Event-driven preference matching
+end legend
+
+@enduml

@@ -1,0 +1,85 @@
+@startuml
+!pragma layout smetana
+allowmixing
+skinparam componentStyle rectangle
+skinparam backgroundColor transparent
+skinparam packageStyle rectangle
+skinparam portStyle solid
+skinparam interfaceStyle rectangle
+
+title Monitoring Service - Component Diagram
+
+package "Monitoring Service" as MS {
+  portin "status_in" as status_in
+  portin "timer_in" as timer_in
+  portout "events" as events
+
+  ' Provided interfaces
+  interface "IEquipmentStatusService" as IStatus {
+    + receiveStatusReport(report: EquipmentStatusReport): void
+  }
+  interface "IMonitoringTriggerService" as ITrig {
+    + triggerMonitorCheck(): void
+  }
+
+  ' Required interfaces
+  interface "IMonitorRepository" as IRepo {
+    + saveStatus(report: EquipmentStatusReport)
+    + findLastReportTime(equipmentId: String): Date
+    + saveNotificationLog(equipmentId: String, alertMessage: String)
+  }
+  interface "IMessagePublisherService" as IPub {
+    + publishEvent(topic: String, event: DomainEvent)
+  }
+
+  package "Service Layer" {
+    component "StatusReceiverManager" as SRM
+    component "HeartbeatChecker" as HBC
+  }
+' Responsibilities (single-line notes)
+note bottom of SRM : Responsibilities: Persist reports, emit direct-fault events
+note bottom of HBC : Responsibilities: Timer checks, timeout alerts, logging
+note bottom of IStatus : Provided heartbeat/status API
+note bottom of ITrig : Provided timer-driven trigger API
+note bottom of IRepo : DB_MONITOR (status + audit log via saveNotificationLog)
+note bottom of IPub : Publish alerts to broker
+}
+
+package "Domain Model" {
+  class "EquipmentStatusReport" as EquipmentStatusReport
+}
+
+package "Events" {
+  class "DomainEvent" as DomainEvent
+  class "EquipmentFaultDetectedEvent" as EquipmentFaultDetectedEvent
+}
+
+
+' Provided/Required relationships
+SRM ..|> IStatus
+HBC ..|> ITrig
+SRM -( IRepo
+SRM -( IPub
+HBC -( IRepo
+HBC -( IPub
+
+' Ports wiring
+status_in --> IStatus : "receiveStatusReport"
+timer_in --> ITrig : "triggerMonitorCheck"
+IPub --> events : "publishEvent(topic, event)"
+
+' Model/event usage
+IStatus ..> EquipmentStatusReport : uses
+IRepo ..> EquipmentStatusReport : uses
+SRM ..> EquipmentFaultDetectedEvent : emits
+HBC ..> EquipmentFaultDetectedEvent : emits
+IPub ..> DomainEvent : uses
+
+legend right
+  Monitoring Service structure
+  - Provided heartbeat + timer APIs
+  - Repository + broker dependencies
+  - Direct-fault and timeout alert flows
+end legend
+
+@enduml

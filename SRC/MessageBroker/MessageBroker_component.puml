@@ -1,0 +1,79 @@
+@startuml MessageBroker Component Diagram
+
+' 기본 설정
+!pragma layout smetana
+allowmixing
+skinparam componentStyle rectangle
+skinparam backgroundColor transparent
+skinparam packageStyle rectangle
+skinparam portStyle solid
+skinparam interfaceStyle rectangle
+
+package "MessageBroker Core" {
+    ' Interface Layer (Port Definitions)
+    package "Interface Layer" {
+        interface "IMessagePublisherService" as IPublisher {
+            + publishEvent(topic: String, event: DomainEvent)
+        }
+        interface "IMessageSubscriptionService" as ISubscriber {
+            + subscribeToTopic(topic: String, handler: Consumer<DomainEvent>)
+        }
+    }
+
+    ' Domain Layer
+    package "Domain Layer" {
+        interface "DomainEvent" as DomainEvent
+        class "UserRegisteredEvent" as UserRegisteredEvent
+        class "BranchPreferenceCreatedEvent" as BranchPreferenceCreatedEvent
+        class "TaskConfirmedEvent" as TaskConfirmedEvent
+        class "EquipmentFaultDetectedEvent" as EquipmentFaultDetectedEvent
+        class "AccessAttemptEvent" as AccessAttemptEvent
+    }
+
+    ' Core Implementation Layer
+    package "Core Layer" {
+        component "MessageBrokerComponent" as MessageBroker
+    }
+
+    ' 외부 통신 포트
+    portin "publisher_port" as pub_port
+    portin "subscriber_port" as sub_port
+}
+
+' External Components (Sample)
+component "ApplicationService" as AppService
+component "ConsumerService" as Consumer
+
+' Relationships
+MessageBroker ..|> IPublisher
+MessageBroker ..|> ISubscriber
+AppService --> pub_port
+Consumer --> sub_port
+pub_port --> IPublisher
+sub_port --> ISubscriber
+
+' Notes
+note right of MessageBroker
+  Implements asynchronous message handling:
+  - Topic-based message routing (by event type)
+  - Thread pool for concurrent message processing
+  - Maintains subscriber list per topic
+end note
+
+note right of DomainEvent
+  Base class for all
+  domain events
+end note
+
+legend right
+  Message Broker Component
+  - Asynchronous Communication
+  - Publisher/Subscriber Pattern
+  - Thread Pool Management
+  - Message Persistence
+  - Events: UserRegistered, BranchPreferenceCreated, TaskConfirmed,
+            EquipmentFaultDetected, AccessAttempt
+  - Topics: users, preferences, rewards, faults, access
+end legend
+
+@enduml
