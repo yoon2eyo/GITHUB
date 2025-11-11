@@ -3,20 +3,18 @@
 
 package "Interface Layer" {
   interface INotificationApi
-  component NotificationApiImpl
-  INotificationApi -- NotificationApiImpl
+  component NotificationController
+  INotificationApi -- NotificationController
 }
 
 package "Business Layer" {
   interface INotificationDispatcherService
-  interface INotificationEventConsumer
   
   component NotificationDispatcherManager
   component NotificationDispatcherConsumer
   
   ' Service implementations
   INotificationDispatcherService -- NotificationDispatcherManager
-  INotificationEventConsumer -- NotificationDispatcherConsumer
 }
 
 package "System Interface Layer" {
@@ -24,18 +22,18 @@ package "System Interface Layer" {
   interface IMessageSubscriptionService
   interface IMessagePublisherService
   
-  component PushNotificationGatewayImpl
-  component MessageBrokerComponent
+  component FcmPushGateway
+  component RabbitMQAdapter
   
   ' System interface implementations
-  IPushNotificationGateway -- PushNotificationGatewayImpl
-  IMessageSubscriptionService -- MessageBrokerComponent
-  IMessagePublisherService -- MessageBrokerComponent
+  IPushNotificationGateway -- FcmPushGateway
+  IMessageSubscriptionService -- RabbitMQAdapter
+  IMessagePublisherService -- RabbitMQAdapter
 }
 
 ' 패키지 외부 연결
 ' Interface Layer -> Business Layer
-NotificationApiImpl ..( INotificationDispatcherService : <<HTTP>>
+NotificationController ..( INotificationDispatcherService : <<HTTP>>
 
 ' Business Layer -> System Interface Layer
 NotificationDispatcherManager ..( IPushNotificationGateway : <<HTTP>>

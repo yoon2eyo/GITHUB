@@ -1,100 +1,93 @@
 @startuml MessageBrokerComponent
 ' MessageBroker_component.puml
-' Architecture: Hexagonal Architecture - Infrastructure Layer
-' Tactic: Message-Based Integration, Passive Redundancy
-' DD-04, DD-08: Event-Driven Integration between services
+' Architecture: Pure Message Infrastructure (Persistence Layer)
+' Tactic: Message-Based, Passive Redundancy, Use an Intermediary
+' DD-02, DD-04, DD-07: Event-Driven Integration between services
 
 package "Interface Layer" {
   interface IMessagePublisherService
   interface IMessageSubscriptionService
+  
+  component MessagePublisherApi
+  component MessageSubscriptionApi
+  
+  IMessagePublisherService -- MessagePublisherApi
+  IMessageSubscriptionService -- MessageSubscriptionApi
 }
 
 package "Business Layer" {
   interface ITopicRegistry
-  component TopicRegistry
-  
   interface IEventPublisher
-  component EventPublisher
-  
   interface ISubscriptionManager
+  interface IRoutingKeyResolver
+  interface IMessageSerializer
+  
+  component TopicRegistry
+  component EventPublisher
   component SubscriptionManager
-  
-  interface IAsyncEventDispatcher
-  component AsyncEventDispatcher
-  
-  interface IDomainEvent
-  
+  component RoutingKeyResolver
+  component MessageSerializer
   component MessageBrokerCoordinator
   
   ITopicRegistry -- TopicRegistry
   IEventPublisher -- EventPublisher
   ISubscriptionManager -- SubscriptionManager
-  IAsyncEventDispatcher -- AsyncEventDispatcher
-  
-  IMessagePublisherService -- MessageBrokerCoordinator
-  IMessageSubscriptionService -- MessageBrokerCoordinator
+  IRoutingKeyResolver -- RoutingKeyResolver
+  IMessageSerializer -- MessageSerializer
   
   MessageBrokerCoordinator ..( ITopicRegistry : <<Local>>
   MessageBrokerCoordinator ..( IEventPublisher : <<Local>>
   MessageBrokerCoordinator ..( ISubscriptionManager : <<Local>>
   
-  EventPublisher ..( IAsyncEventDispatcher : <<Local>>
-  EventPublisher ..( ITopicRegistry : <<Local>>
+  EventPublisher ..( IRoutingKeyResolver : <<Local>>
+  EventPublisher ..( IMessageSerializer : <<Local>>
   
   SubscriptionManager ..( ITopicRegistry : <<Local>>
-  
-  AsyncEventDispatcher ..( IDomainEvent
+  SubscriptionManager ..( IMessageSerializer : <<Local>>
 }
 
 package "System Interface Layer" {
-  interface IHelperEventConsumer
-  component HelperEventConsumerAdapter
-  component PreferenceMatchConsumer
-  component NotificationDispatcherConsumer
+  interface IRabbitMQConnection
+  interface IMessageQueueAdapter
   
-  interface IAuthRepository
-  component AuthRepositoryImpl
+  component RabbitMQConnectionPool
+  component RabbitMQAdapter
+  queue MessageQueue
   
-  interface IHelperRepository
-  component HelperRepositoryImpl
+  IRabbitMQConnection -- RabbitMQConnectionPool
+  IMessageQueueAdapter -- RabbitMQAdapter
   
-  interface ISearchRepository
-  component SearchRepositoryImpl
-  
-  interface IMonitorRepository
-  component MonitorRepositoryImpl
-  
-  interface IAccessVectorRepository
-  component AccessVectorRepositoryImpl
-  
-  database DB_AUTH
-  database DB_HELPER
-  database DB_SEARCH
-  database DB_MONITOR
-  database DB_ACCESS
-  
-  IAuthRepository -- AuthRepositoryImpl
-  IHelperRepository -- HelperRepositoryImpl
-  ISearchRepository -- SearchRepositoryImpl
-  IMonitorRepository -- MonitorRepositoryImpl
-  IAccessVectorRepository -- AccessVectorRepositoryImpl
-  
-  HelperEventConsumerAdapter ..( IMessageSubscriptionService : <<Local>>
-  
-  AuthRepositoryImpl ..( DB_AUTH : <<JDBC>>
-  HelperRepositoryImpl ..( DB_HELPER : <<JDBC>>
-  SearchRepositoryImpl ..( DB_SEARCH : <<JDBC>>
-  MonitorRepositoryImpl ..( DB_MONITOR : <<JDBC>>
-  AccessVectorRepositoryImpl ..( DB_ACCESS : <<JDBC>>
+  RabbitMQAdapter ..( MessageQueue : <<AMQP>>
 }
 
-' 패키지 외부 연결 (하단부에 작성)
-IMessageSubscriptionService -up-( MessageBrokerCoordinator : <<Local>>
-IHelperEventConsumer -up-( HelperEventConsumerAdapter : <<Local>>
+' Package external connections
+MessagePublisherApi ..( MessageBrokerCoordinator : <<Local>>
+MessageSubscriptionApi ..( MessageBrokerCoordinator : <<Local>>
 
-' AsyncEventDispatcher에서 컨슈머들로 IDomainEvent 전달 (RabbitMQ)
-AsyncEventDispatcher --> PreferenceMatchConsumer : <<RabbitMQ>> IDomainEvent
-AsyncEventDispatcher --> NotificationDispatcherConsumer : <<RabbitMQ>> IDomainEvent
-AsyncEventDispatcher --> HelperEventConsumerAdapter : <<RabbitMQ>> IDomainEvent
+EventPublisher ..( IMessageQueueAdapter : <<AMQP>>
+SubscriptionManager ..( IMessageQueueAdapter : <<AMQP>>
+RabbitMQAdapter ..( IRabbitMQConnection : <<Local>>
+
+note right of MessageBrokerCoordinator
+  **Tactic: Use an Intermediary**
+  - Decouples publishers from subscribers
+  - Supports Passive Redundancy (DD-02)
+  - Queue persistence for message durability
+  
+  **Key Events:**
+  • TaskSubmittedEvent (Helper → AITaskAnalysisConsumer)
+  • TaskConfirmedEvent (Helper → RewardUpdateConsumer)
+  • BranchPreferenceCreatedEvent (Search → PreferenceMatchConsumer)
+  • EquipmentFaultEvent (Monitor → NotificationDispatcher)
+  • BranchInfoCreatedEvent (BranchOwner → PreferenceMatchConsumer)
+end note
+
+legend right
+  **Message Broker: Pure Infrastructure**
+  - No business logic or data storage
+  - Consumers reside in their owning services
+  - Repositories managed by respective services
+  - DD-03: Database per Service maintained
+end legend
 
 @enduml

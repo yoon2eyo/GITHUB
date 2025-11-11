@@ -5,19 +5,18 @@ package "Interface Layer" {
   interface IAuthServiceApi
   interface IAuthManagementApi
   
-  component AuthServiceApiImpl
-  component AuthManagementApiImpl
+  component AuthServiceController
+  component UserManagementController
   
   ' API implementations
-  IAuthServiceApi -- AuthServiceApiImpl
-  IAuthManagementApi -- AuthManagementApiImpl
+  IAuthServiceApi -- AuthServiceController
+  IAuthManagementApi -- UserManagementController
 }
 
 package "Business Layer" {
   interface IAuthenticationService
   interface IAuthorizationService
   interface IUserRegistrationService
-  interface IAuthEventConsumer
   
   component AuthenticationManager
   component AuthorizationManager
@@ -28,7 +27,6 @@ package "Business Layer" {
   IAuthenticationService -- AuthenticationManager
   IAuthorizationService -- AuthorizationManager
   IUserRegistrationService -- UserRegistrationManager
-  IAuthEventConsumer -- AuthEventConsumer
   
   ' Business layer internal relationships
   AuthenticationManager ..( IAuthorizationService : <<Local>>
@@ -42,29 +40,28 @@ package "System Interface Layer" {
   interface ITokenService
   interface ICreditCardVerificationService
   
-  component AuthRepositoryImpl
-  component MessageBrokerComponent
-  component JwtTokenServiceImpl
+  component AuthJpaRepository
+  component RabbitMQAdapter
+  component JwtTokenManager
   component CreditCardVerificationClient
   database AuthDatabase
   
   ' System interface implementations
-  IAuthRepository -- AuthRepositoryImpl
-  IMessagePublisherService -- MessageBrokerComponent
-  IMessageSubscriptionService -- MessageBrokerComponent
-  ITokenService -- JwtTokenServiceImpl
+  IAuthRepository -- AuthJpaRepository
+  IMessagePublisherService -- RabbitMQAdapter
+  IMessageSubscriptionService -- RabbitMQAdapter
+  ITokenService -- JwtTokenManager
   ICreditCardVerificationService -- CreditCardVerificationClient
   
   ' System dependencies
-  AuthRepositoryImpl ..( AuthDatabase : <<JDBC>>
-  MessageBrokerComponent ..( IAuthEventConsumer : <<RabbitMQ>>
+  AuthJpaRepository ..( AuthDatabase : <<JDBC>>
 }
 
 ' 패키지 외부 연결
 ' Interface Layer -> Business Layer
-AuthServiceApiImpl ..( IAuthenticationService : <<HTTP>>
-AuthServiceApiImpl ..( IAuthorizationService : <<HTTP>>
-AuthManagementApiImpl ..( IUserRegistrationService : <<HTTP>>
+AuthServiceController ..( IAuthenticationService : <<HTTP>>
+AuthServiceController ..( IAuthorizationService : <<HTTP>>
+UserManagementController ..( IUserRegistrationService : <<HTTP>>
 
 ' Business Layer -> Message Broker 연결
 AuthenticationManager ..( IMessagePublisherService : <<RabbitMQ>>

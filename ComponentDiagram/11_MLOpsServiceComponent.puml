@@ -7,11 +7,11 @@ package "Interface Layer" {
   interface IModelDeploymentApi
 
   ' API 구현 컴포넌트
-  component TrainingTriggerApiImpl
-  component ModelDeploymentApiImpl
+  component TrainingController
+  component DeploymentController
   
-  ITrainingTriggerApi -- TrainingTriggerApiImpl
-  IModelDeploymentApi -- ModelDeploymentApiImpl
+  ITrainingTriggerApi -- TrainingController
+  IModelDeploymentApi -- DeploymentController
 }
 
 package "Business Layer" {
@@ -66,7 +66,7 @@ package "System Interface Layer" {
   ' 시스템 인터페이스
   interface IModelDataRepository
   interface ITrainingDataRepository
-  interface IPanDokuModelService [Internal ML Engine]
+  interface IMLInferenceEngine
   interface IMessagePublisherService
   interface IMessageSubscriptionService
   interface IFaceModelClient
@@ -74,9 +74,10 @@ package "System Interface Layer" {
   interface IHelperRepository
   
   ' 시스템 컴포넌트
-  component ModelDataRepositoryImpl
-  component TrainingDataRepositoryImpl
-  component MessageBrokerComponent
+  component ModelJpaRepository
+  component TrainingDataJpaRepository
+  component MLInferenceEngineAdapter
+  component RabbitMQAdapter
   component FaceModelClientAdapter
   component AuthRepositoryAdapter
   component HelperRepositoryAdapter
@@ -86,32 +87,31 @@ package "System Interface Layer" {
   database TrainingDataStore
   
   ' 시스템 구현
-  IModelDataRepository -- ModelDataRepositoryImpl
-  ITrainingDataRepository -- TrainingDataRepositoryImpl
-  IMessagePublisherService -- MessageBrokerComponent
-  IMessageSubscriptionService -- MessageBrokerComponent
+  IModelDataRepository -- ModelJpaRepository
+  ITrainingDataRepository -- TrainingDataJpaRepository
+  IMLInferenceEngine -- MLInferenceEngineAdapter
+  IMessagePublisherService -- RabbitMQAdapter
+  IMessageSubscriptionService -- RabbitMQAdapter
   IFaceModelClient -- FaceModelClientAdapter
   IAuthRepository -- AuthRepositoryAdapter
   IHelperRepository -- HelperRepositoryAdapter
   
-  ModelDataRepositoryImpl ..( ModelDatabase : <<JDBC>>
-  TrainingDataRepositoryImpl ..( TrainingDataStore : <<JDBC>>
+  ModelJpaRepository ..( ModelDatabase : <<JDBC>>
+  TrainingDataJpaRepository ..( TrainingDataStore : <<JDBC>>
 }
 
 ' 패키지 외부 연결
 ' Interface Layer -> Business Layer
-TrainingTriggerApiImpl ..( ITrainingTriggerService : <<HTTP>>
-ModelDeploymentApiImpl ..( IModelDeploymentService : <<HTTP>>
+TrainingController ..( ITrainingTriggerService : <<HTTP>>
+DeploymentController ..( IModelDeploymentService : <<HTTP>>
 
 ' Business Layer -> System Interface Layer
-DataCollector ..( IAuthRepository : <<JDBC>>
-DataCollector ..( IHelperRepository : <<JDBC>>
+DataCollector ..( IAuthRepository : <<JDBC READ-ONLY>>
+DataCollector ..( IHelperRepository : <<JDBC READ-ONLY>>
 DataManagementService ..( IModelDataRepository : <<JDBC>>
 DataManagementService ..( ITrainingDataRepository : <<JDBC>>
 DeploymentService ..( IModelDataRepository : <<JDBC>>
-DeploymentService ..( IPanDokuModelService : <<Local>>
-DeploymentService ..( IPanDokuModelService : <<Local>>
-DeploymentService ..( IPanDokuModelService : <<Local>>
+DeploymentService ..( IMLInferenceEngine : <<deploy/train>>
 DeploymentService ..( IFaceModelClient : <<gRPC>>
 
 ' Message Broker 연결
@@ -121,7 +121,7 @@ ModelVerificationService ..( IMessagePublisherService : <<RabbitMQ>>
 TrainingManager ..( IMessageSubscriptionService : <<RabbitMQ>>
 
 ' Event Handler 연결
-MessageBrokerComponent ..( ITrainingEventHandler : <<RabbitMQ>>
-MessageBrokerComponent ..( IDeploymentEventHandler : <<RabbitMQ>>
+RabbitMQAdapter ..( ITrainingEventHandler : <<RabbitMQ>>
+RabbitMQAdapter ..( IDeploymentEventHandler : <<RabbitMQ>>
 
 @enduml

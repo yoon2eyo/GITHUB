@@ -5,11 +5,11 @@ package "Interface Layer" {
   interface IApiGatewayEntry
   interface IApiGatewayManagement
 
-  component ApiGatewayApiImpl
-  component GatewayManagementApiImpl
+  component GatewayController
+  component GatewayManagementController
   
-  IApiGatewayEntry -- ApiGatewayApiImpl
-  IApiGatewayManagement -- GatewayManagementApiImpl
+  IApiGatewayEntry -- GatewayController
+  IApiGatewayManagement -- GatewayManagementController
 }
 
 package "Business Layer" {
@@ -59,25 +59,25 @@ package "System Interface Layer" {
   interface ICircuitBreaker
   interface IRateLimiter
   
-  component ServiceRegistryImpl
+  component EurekaServiceRegistry
   component AuthenticationClientAdapter
   component AuthorizationClientAdapter
-  component MessageBrokerComponent
-  component CircuitBreakerImpl
-  component RateLimiterImpl
+  component RabbitMQAdapter
+  component ResilientCircuitBreaker
+  component ResilientRateLimiter
   
-  IServiceRegistry -- ServiceRegistryImpl
+  IServiceRegistry -- EurekaServiceRegistry
   IAuthenticationClient -- AuthenticationClientAdapter
   IAuthorizationClient -- AuthorizationClientAdapter
-  IMessagePublisherService -- MessageBrokerComponent
-  ICircuitBreaker -- CircuitBreakerImpl
-  IRateLimiter -- RateLimiterImpl
+  IMessagePublisherService -- RabbitMQAdapter
+  ICircuitBreaker -- ResilientCircuitBreaker
+  IRateLimiter -- ResilientRateLimiter
 }
 
 ' 패키지 외부 연결
 ' Interface Layer -> Business Layer
-ApiGatewayApiImpl ..( IRequestRoutingService : <<HTTP>>
-GatewayManagementApiImpl ..( IServiceDiscoveryService : <<HTTP>>
+GatewayController ..( IRequestRoutingService : <<HTTP>>
+GatewayManagementController ..( IServiceDiscoveryService : <<HTTP>>
 
 ' Business Layer -> System Interface Layer
 ServiceDiscoveryManager ..( IServiceRegistry : <<Local>>

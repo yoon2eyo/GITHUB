@@ -6,17 +6,16 @@ package "Interface Layer" {
   interface IBranchOwnerApi
   interface IBranchQueryApi
 
-  component BranchOwnerApiImpl
-  component BranchQueryApiImpl
+  component BranchOwnerController
+  component BranchQueryController
   
-  IBranchOwnerApi -- BranchOwnerApiImpl
-  IBranchQueryApi -- BranchQueryApiImpl
+  IBranchOwnerApi -- BranchOwnerController
+  IBranchQueryApi -- BranchQueryController
 }
 
 package "Business Layer" {
   interface IBranchOwnerManagementService
   interface IBranchInfoService
-  interface IBranchEventConsumer
   
   component BranchOwnerManager
   component BranchInfoValidator
@@ -25,7 +24,6 @@ package "Business Layer" {
   ' Service implementations
   IBranchOwnerManagementService -- BranchOwnerManager
   IBranchInfoService -- BranchInfoValidator
-  IBranchEventConsumer -- BranchEventProcessor
   
   ' Business layer internal relationships
   BranchOwnerManager ..( IBranchInfoService : <<use>>
@@ -38,26 +36,26 @@ package "System Interface Layer" {
   interface IMessagePublisherService
   interface IMessageSubscriptionService
   
-  component BranchRepositoryImpl
-  component AuthRepositoryImpl
-  component MessageBrokerComponent
+  component BranchJpaRepository
+  component AuthJpaRepository
+  component RabbitMQAdapter
   
   database BranchDatabase
   database AuthDatabase
   
-  IBranchRepository -- BranchRepositoryImpl
-  IAuthRepository -- AuthRepositoryImpl
-  IMessagePublisherService -- MessageBrokerComponent
-  IMessageSubscriptionService -- MessageBrokerComponent
+  IBranchRepository -- BranchJpaRepository
+  IAuthRepository -- AuthJpaRepository
+  IMessagePublisherService -- RabbitMQAdapter
+  IMessageSubscriptionService -- RabbitMQAdapter
   
-  BranchRepositoryImpl ..( BranchDatabase : <<JDBC>>
-  AuthRepositoryImpl ..( AuthDatabase : <<JDBC>>
+  BranchJpaRepository ..( BranchDatabase : <<JDBC>>
+  AuthJpaRepository ..( AuthDatabase : <<JDBC>>
 }
 
 ' 패키지 외부 연결
 ' Interface Layer -> Business Layer
-BranchOwnerApiImpl ..( IBranchOwnerManagementService : <<HTTP>>
-BranchQueryApiImpl ..( IBranchInfoService : <<HTTP>>
+BranchOwnerController ..( IBranchOwnerManagementService : <<HTTP>>
+BranchQueryController ..( IBranchInfoService : <<HTTP>>
 
 ' Business Layer -> System Interface Layer
 BranchOwnerManager ..( IBranchRepository : <<JDBC>>

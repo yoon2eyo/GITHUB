@@ -18,65 +18,77 @@ node "Branch Equipment & Cameras" as Equipment
 component "IPushNotificationGateway" as PushGW
 
 rectangle "Smart Fitness Cloud" {
-  component "RequestRouter" as Gateway
-  queue "MessageBrokerComponent" as Broker
+  component "RequestRouter (API Gateway)" as Gateway
+  queue "RabbitMQ (Message Broker)" as Broker
 
-  package "Core Services" {
+  package "Real-Time Access Layer" {
+    component "AccessAuthorizationManager" as Access
+    component "VectorComparisonEngine (FACE MODEL)" as FaceModel
+  }
+
+  package "Business Logic Layer" {
     component "AuthenticationManager" as Auth
     component "BranchContentService" as Search
     component "TaskManagementManager" as HelperSvc
     component "BranchOwnerManager" as BranchOwner
-    component "AccessAuthorizationManager" as Access
     component "StatusReceiverManager" as Monitor
     component "NotificationDispatcherConsumer" as Notify
-    component "LLMKeywordExtractor" as AIService
   }
 
-  package "AI & ML Services" {
-    component "FaceModelServiceComponent" as FaceModel
-    component "IPanDokuModelService (Internal ML Engine)" as PanDoku [Internal]
+  package "AI Pipeline Layer" {
+    component "MLOpsTrainingService" as MLOps
+    component "MLInferenceEngine (Internal ML Platform)" as MLEngine
   }
 }
 
+' Client → Gateway
 Customer --> Gateway : HTTPS /auth,/search
 Helper --> Gateway : HTTPS /helper
 Manager --> Gateway : HTTPS /branch
 Ops --> Gateway : HTTPS /ops console
 
+' Gateway → Services (Synchronous)
 Gateway --> Auth : <<HTTP>>
 Gateway --> Search : <<HTTP>>
 Gateway --> HelperSvc : <<HTTP>>
 Gateway --> BranchOwner : <<HTTP>>
 Gateway --> Access : <<HTTP>>
 
+' External System Integration
 Auth --> CC : <<HTTP>> Card verify
-Search --> ExtLLM : <<HTTP>> Keyword extraction
-Search --> AIService : <<HTTP>> LLM analysis
-HelperSvc --> Broker : <<RabbitMQ>> publish tasks
+Search --> ExtLLM : <<HTTP>> Cold Path: Keyword extraction
 
-HelperSvc --> Broker : <<RabbitMQ>> tasks.submitted/confirmed
-Search --> Broker : <<RabbitMQ>> publish preferences
-BranchOwner --> Broker : <<RabbitMQ>> branch.info.created
-Access --> Broker : <<RabbitMQ>> access_attempt
-Monitor --> Broker : <<RabbitMQ>> faults/heartbeat
+' Real-Time Access Layer (DD-05: IPC Optimization)
+Equipment --> Access : <<HTTPS>> face photo
+Access --> FaceModel : <<IPC>> calculateSimilarityScore()
+Access --> Equipment : <<HTTPS>> gate control
+FaceModel --> MLEngine : <<Local>> model inference
 
-Broker --> HelperSvc : <<RabbitMQ>> tasks.* subscriptions
-Broker --> Search : <<RabbitMQ>> preferences updates
-Broker --> BranchOwner : <<RabbitMQ>> branch events
-Broker --> Notify : <<RabbitMQ>> faults topic
+note right of Access
+  DD-05: Same Physical Node
+  - Access ↔ FaceModel: IPC/gRPC
+  - Latency: ~205ms (parallelized)
+  - Data Pre-Fetching: Face vectors cached
+end note
 
+' Message Broker (Asynchronous Event Flow)
+HelperSvc --> Broker : <<Publish>> TaskSubmittedEvent
+HelperSvc --> Broker : <<Publish>> TaskConfirmedEvent
+Search --> Broker : <<Publish>> BranchPreferenceCreatedEvent
+BranchOwner --> Broker : <<Publish>> BranchInfoCreatedEvent
+Monitor --> Broker : <<Publish>> EquipmentFaultEvent
+
+Broker --> Notify : <<Subscribe>> EquipmentFaultEvent
 Notify --> PushGW : <<HTTP>> push alert
-PushGW --> Ops : <<HTTPS>> Pager/Push
+PushGW --> Manager : <<HTTPS>> Alert to Branch Owner
 
-Equipment --> Access : <<Local>> face vectors
-Access --> Equipment : <<Local>> gate control
+' Equipment Monitoring (DD-04: Heartbeat)
 Equipment --> Monitor : <<TCP>> heartbeat/status
+Monitor --> Equipment : <<HTTPS>> ping/status request
 
-Access --> PanDoku : <<IPC>> generateVector()
-Access --> FaceModel : <<IPC>> IFaceModelService
-FaceModel --> PanDoku : <<IPC>> deployModel(), trainModel()
-Search --> PanDoku : <<Local>> analyzeQuery()
-AIService --> PanDoku : <<Local>> analyzeQuery()
-Monitor --> PanDoku : <<Local>> monitorModel(), getModelStatus()
+' MLOps & AI Pipeline
+MLOps --> MLEngine : <<Local>> deployModel(), trainModel()
+MLOps --> Auth : <<JDBC READ-ONLY>> facial data
+MLOps --> HelperSvc : <<JDBC READ-ONLY>> laundry data
 
 @enduml

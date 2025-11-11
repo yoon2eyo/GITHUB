@@ -1,92 +1,131 @@
 @startuml MonitoringServiceComponent
-' MonitoringService_component.puml (가이드 준수)
+' MonitoringService_component.puml (DD-04: Fault Detection & Real-time Notification)
+' Tactic: Heartbeat, Ping/echo, Maintain Audit Trail, Passive Redundancy
 
 package "Interface Layer" {
-  interface IMonitoringServiceApi
-  component MonitoringServiceApiImpl
-  IMonitoringServiceApi -- MonitoringServiceApiImpl
+  interface IEquipmentStatusReceiver
+  interface IEquipmentCommandApi
+  
+  component EquipmentStatusReceiver
+  component EquipmentCommandController
+  
+  IEquipmentStatusReceiver -- EquipmentStatusReceiver
+  IEquipmentCommandApi -- EquipmentCommandController
 }
 
 package "Business Layer" {
-  interface IEquipmentStatusService
-  interface IMonitoringTriggerService
-  interface IMonitorEventConsumer
-  interface IEquipmentStatusUpdater
-  interface IEquipmentHeartbeatMonitor
-  interface IEquipmentEventHandler
+  ' Tactic: Heartbeat (Equipment-driven reporting)
+  interface IHeartbeatReceiverService
+  interface IFaultDetectionService
   
-  component StatusReceiverManager
-  component HeartbeatChecker
-  component MonitorEventConsumer
-  component EquipmentStatusTracker
+  component HeartbeatReceiver
+  component FaultDetector
   
-  ' Service implementations
-  IEquipmentStatusService -- StatusReceiverManager
-  IMonitoringTriggerService -- HeartbeatChecker
-  IMonitorEventConsumer -- MonitorEventConsumer
-  IEquipmentStatusUpdater -- EquipmentStatusTracker
-  IEquipmentHeartbeatMonitor -- EquipmentStatusTracker
-  IEquipmentEventHandler -- EquipmentStatusTracker
+  IHeartbeatReceiverService -- HeartbeatReceiver
+  IFaultDetectionService -- FaultDetector
   
-  ' Business layer internal relationships
-  StatusReceiverManager ..( IEquipmentStatusUpdater : <<use>>
-  HeartbeatChecker ..( IEquipmentHeartbeatMonitor : <<use>>
-  MonitorEventConsumer ..( IEquipmentEventHandler : <<use>>
-
-  note right of HeartbeatChecker
-    Periodically checks equipment status
-    and emits timeout alerts
+  HeartbeatReceiver ..( IFaultDetectionService : <<Local>>
+  
+  note right of HeartbeatReceiver
+    **DD-04 Tactic: Heartbeat**
+    Equipment sends status every 10 minutes
+    
+    If '고장' status received:
+    → Immediate fault detection
+    → Publish EquipmentFaultEvent
   end note
-
-  note right of StatusReceiverManager
-    Processes real-time equipment status
-    reports and detects direct faults
+  
+  ' Tactic: Ping/echo (System-driven monitoring)
+  interface IPingEchoService
+  
+  component EquipmentHealthChecker
+  component PingEchoExecutor
+  
+  IPingEchoService -- PingEchoExecutor
+  
+  EquipmentHealthChecker ..( IPingEchoService : <<Local>>
+  EquipmentHealthChecker ..( IFaultDetectionService : <<Local>>
+  
+  note left of EquipmentHealthChecker
+    **DD-04 Tactic: Ping/echo**
+    Triggered by Timer every 10 seconds
+    
+    If no heartbeat for 30 seconds:
+    → Send ping/status request
+    → If no response: fault detected
+    → Publish EquipmentFaultEvent
+    
+    Target: Alert within 15초 (QAS-01)
   end note
+  
+  ' Tactic: Maintain Audit Trail
+  interface IAuditLogService
+  component AuditLogger
+  
+  IAuditLogService -- AuditLogger
+  
+  FaultDetector ..( IAuditLogService : <<Local>>
 }
 
 package "System Interface Layer" {
-  interface IMonitorRepository
-  interface IMessagePublisherService
-  interface IMessageSubscriptionService
+  interface IEquipmentStatusRepository
+  interface IEquipmentGateway
   interface ISchedulerService
+  interface IMessagePublisherService
   
-  component MonitorRepositoryImpl
-  component MessageBrokerComponent
-  component SchedulerServiceImpl
+  component EquipmentStatusJpaRepository
+  component EquipmentGatewayClient
+  component QuartzScheduler
+  component RabbitMQAdapter
+  
   database MonitorDatabase
   
-  ' System interface implementations
-  IMonitorRepository -- MonitorRepositoryImpl
-  IMessagePublisherService -- MessageBrokerComponent
-  IMessageSubscriptionService -- MessageBrokerComponent
-  ISchedulerService -- SchedulerServiceImpl
+  IEquipmentStatusRepository -- EquipmentStatusJpaRepository
+  IEquipmentGateway -- EquipmentGatewayClient
+  ISchedulerService -- QuartzScheduler
+  IMessagePublisherService -- RabbitMQAdapter
   
-  ' System dependencies
-  MonitorRepositoryImpl ..( MonitorDatabase : <<JDBC>>
-  MessageBrokerComponent ..( IMonitorEventConsumer : <<RabbitMQ>>
+  EquipmentStatusJpaRepository ..( MonitorDatabase : <<JDBC>>
 }
 
-' 패키지 외부 연결
-' Interface Layer -> Business Layer
-MonitoringServiceApiImpl ..( IEquipmentStatusService : <<HTTP>>
+' Package external connections (Interface Layer → Business Layer)
+EquipmentStatusReceiver ..( IHeartbeatReceiverService : <<TCP/HTTPS>>
+EquipmentCommandController ..( IPingEchoService : <<HTTPS>>
 
-' Business Layer -> Message Broker 연결
-StatusReceiverManager ..( IMessagePublisherService : <<RabbitMQ>>
-HeartbeatChecker ..( IMessagePublisherService : <<RabbitMQ>>
-MonitorEventConsumer ..( IMessageSubscriptionService : <<RabbitMQ>>
+' Business Layer → System Interface Layer
 
-' Business Layer -> System Interface Layer
-StatusReceiverManager ..( IMonitorRepository : <<JDBC>>
-HeartbeatChecker ..( IMonitorRepository : <<JDBC>>
-MonitorEventConsumer ..( IMonitorRepository : <<JDBC>>
-HeartbeatChecker ..( ISchedulerService : <<Local>>
+' Heartbeat flow
+HeartbeatReceiver ..( IEquipmentStatusRepository : <<save status>>
+FaultDetector ..( IMessagePublisherService : <<Publish EquipmentFaultEvent>>
+FaultDetector ..( IAuditLogService : <<log>>
+
+' Ping/echo flow
+EquipmentHealthChecker ..( ISchedulerService : <<trigger every 10s>>
+EquipmentHealthChecker ..( IEquipmentStatusRepository : <<check last heartbeat>>
+PingEchoExecutor ..( IEquipmentGateway : <<send ping>>
+PingEchoExecutor ..( IEquipmentStatusRepository : <<update>>
+
+' Audit trail
+AuditLogger ..( IEquipmentStatusRepository : <<persist>>
 
 legend right
-  Monitoring Service structure
-  - Equipment status monitoring
-  - Heartbeat-based fault detection
-  - Event-driven status updates
-  - Scheduled health checks
+  **Monitoring Service: DD-04 Fault Detection**
+  
+  **Two Detection Paths:**
+  1. **Heartbeat (Equipment → Monitor)**
+     - Equipment reports every 10 min
+     - Direct fault detection
+  
+  2. **Ping/echo (Monitor → Equipment)**
+     - System checks every 10 sec
+     - Timeout-based detection (30 sec)
+  
+  **Tactic: Passive Redundancy**
+  - EquipmentFaultEvent → Message Broker
+  - NotificationDispatcher subscribes
+  - Alert sent to BranchOwner
+  
+  **Target: 15초 이내 알림 (QAS-01)**
 end legend
 
 @enduml

@@ -1,66 +1,135 @@
 @startuml HelperServiceComponent
-' HelperService_component.puml (가이드 준수)
+' HelperService_component.puml (UC-12, UC-13, UC-14: Task & AI Analysis Flow)
+' Tactic: Event Based, Message Based, Encapsulate
 
 package "Interface Layer" {
-  interface IHelperServiceApi
-  component HelperTaskManagementApi
-  IHelperServiceApi -- HelperTaskManagementApi
+  interface IHelperTaskApi
+  interface IHelperRewardApi
+  
+  component TaskController
+  component RewardController
+  
+  IHelperTaskApi -- TaskController
+  IHelperRewardApi -- RewardController
 }
 
 package "Business Layer" {
-  interface ITaskManagementService
+  ' Task submission (UC-12)
+  interface ITaskSubmissionService
+  interface ITaskValidationService
+  
+  component TaskSubmissionManager
+  component DailyLimitValidator
+  
+  ITaskSubmissionService -- TaskSubmissionManager
+  ITaskValidationService -- DailyLimitValidator
+  
+  TaskSubmissionManager ..( ITaskValidationService : <<Local>>
+  
+  note right of TaskSubmissionManager
+    **UC-12: Task Photo Registration**
+    1. Validate daily limit (3 photos/day)
+    2. Store photo in storage
+    3. Publish TaskSubmittedEvent
+    4. Respond immediately (async processing)
+  end note
+  
+  ' AI analysis consumer (UC-13)
+  interface ITaskAnalysisService
+  
+  component AITaskAnalysisConsumer
+  component TaskAnalysisEngine
+  
+  ITaskAnalysisService -- TaskAnalysisEngine
+  
+  AITaskAnalysisConsumer ..( ITaskAnalysisService : <<Local>>
+  
+  note left of AITaskAnalysisConsumer
+    **UC-13: AI Photo Analysis**
+    Consumes: TaskSubmittedEvent
+    1. Retrieve photo from storage
+    2. Call ML Inference Engine
+    3. Get result: 양호/미흡/불분명
+    4. Store analysis result
+  end note
+  
+  ' Reward confirmation (UC-14, UC-16)
   interface IRewardConfirmationService
-  interface IHelperEventConsumer
+  interface IRewardCalculationService
   
-  component TaskManagementManager
   component RewardConfirmationManager
-  component AIPanDokuConsumer
   component RewardUpdateConsumer
-  component HelperEventConsumerAdapter
+  component RewardCalculator
   
-  ' Service implementations
-  ITaskManagementService -- TaskManagementManager
   IRewardConfirmationService -- RewardConfirmationManager
+  IRewardCalculationService -- RewardCalculator
   
-  ' Event Consumer implementations
-  IHelperEventConsumer -- AIPanDokuConsumer
-  IHelperEventConsumer -- RewardUpdateConsumer
+  RewardConfirmationManager ..( IRewardCalculationService : <<Local>>
   
-  ' Event Consumer Adapter
-  HelperEventConsumerAdapter ..( IHelperEventConsumer : <<use>>
+  note bottom of RewardUpdateConsumer
+    **UC-16: Reward Balance Update**
+    Consumes: TaskConfirmedEvent
+    Triggered when BranchOwner confirms '양호'
+    Updates helper's reward balance
+  end note
 }
 
 package "System Interface Layer" {
   interface IHelperRepository
-  interface IPanDokuModelService [Internal ML Engine]
+  interface ITaskPhotoStorage
+  interface IMLInferenceEngine
   interface IMessagePublisherService
   interface IMessageSubscriptionService
   
-  component HelperRepositoryImpl
-  component MessageBrokerComponent
+  component HelperJpaRepository
+  component S3PhotoStorage
+  component MLInferenceEngineAdapter
+  component RabbitMQAdapter
+  
   database HelperDatabase
   
-  IHelperRepository -- HelperRepositoryImpl
-  IMessagePublisherService -- MessageBrokerComponent
-  IMessageSubscriptionService -- MessageBrokerComponent
-  HelperRepositoryImpl ..( HelperDatabase : <<JDBC>>
+  IHelperRepository -- HelperJpaRepository
+  ITaskPhotoStorage -- S3PhotoStorage
+  IMLInferenceEngine -- MLInferenceEngineAdapter
+  IMessagePublisherService -- RabbitMQAdapter
+  IMessageSubscriptionService -- RabbitMQAdapter
+  
+  HelperJpaRepository ..( HelperDatabase : <<JDBC>>
 }
 
-' 패키지 외부 연결
-' Interface Layer -> Business Layer
-HelperTaskManagementApi ..( ITaskManagementService : <<HTTP>>
-HelperTaskManagementApi ..( IRewardConfirmationService : <<HTTP>>
+' Package external connections (Interface Layer → Business Layer)
+TaskController ..( ITaskSubmissionService : <<HTTP>>
+RewardController ..( IRewardConfirmationService : <<HTTP>>
 
-' Business Layer -> Message Broker 연결
-TaskManagementManager ..( IMessagePublisherService : <<RabbitMQ>>
-RewardConfirmationManager ..( IMessagePublisherService : <<RabbitMQ>>
-HelperEventConsumerAdapter ..( IMessageSubscriptionService : <<RabbitMQ>>
+' Business Layer → System Interface Layer
 
-' Business Layer -> System Interface Layer
-TaskManagementManager ..( IHelperRepository : <<JDBC>>
-RewardConfirmationManager ..( IHelperRepository : <<JDBC>>
-AIPanDokuConsumer ..( IHelperRepository : <<JDBC>>
-AIPanDokuConsumer ..( IPanDokuModelService : <<Local>>
-RewardUpdateConsumer ..( IHelperRepository : <<JDBC>>
+' Task submission flow
+TaskSubmissionManager ..( ITaskPhotoStorage : <<S3>>
+TaskSubmissionManager ..( IHelperRepository : <<JDBC>>
+TaskSubmissionManager ..( IMessagePublisherService : <<Publish TaskSubmittedEvent>>
+
+' AI analysis flow
+AITaskAnalysisConsumer ..( IMessageSubscriptionService : <<Subscribe TaskSubmittedEvent>>
+TaskAnalysisEngine ..( ITaskPhotoStorage : <<S3>>
+TaskAnalysisEngine ..( IMLInferenceEngine : <<analyzeImage>>
+AITaskAnalysisConsumer ..( IHelperRepository : <<save result>>
+
+' Reward flow
+RewardUpdateConsumer ..( IMessageSubscriptionService : <<Subscribe TaskConfirmedEvent>>
+RewardCalculator ..( IHelperRepository : <<update balance>>
+
+legend right
+  **Helper Service: Event-Driven Task Processing**
+  
+  **Event Flow:**
+  1. Helper uploads → TaskSubmittedEvent
+  2. AITaskAnalysisConsumer → ML Inference Engine analysis
+  3. BranchOwner confirms → TaskConfirmedEvent
+  4. RewardUpdateConsumer → Balance update
+  
+  **Tactic: Message Based (DD-02)**
+  - Async processing protects API responsiveness
+  - Passive Redundancy via Message Broker
+end legend
 
 @enduml

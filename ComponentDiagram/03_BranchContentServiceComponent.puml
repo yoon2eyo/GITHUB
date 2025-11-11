@@ -1,83 +1,125 @@
 @startuml BranchContentServiceComponent
-' BranchContentService_component.puml (DD-06: Hot/Cold Path 통합)
+' BranchContentService_component.puml (DD-06, DD-09: Hot/Cold Path Separation)
+' Tactic: Pipe and Filter, Event Based, Scheduling Policy
 
 package "Interface Layer" {
-  interface IBranchContentServiceApi
-  component BranchContentServiceApiImpl
-  IBranchContentServiceApi -- BranchContentServiceApiImpl
+  interface IBranchSearchApi
+  interface IBranchReviewApi
+  
+  component BranchSearchController
+  component ReviewController
+  
+  IBranchSearchApi -- BranchSearchController
+  IBranchReviewApi -- ReviewController
 }
 
 package "Business Layer" {
-  interface IQueryKeywordTokenizer
-  interface ISearchEngine
-  interface IBranchPreferenceIndex
-  interface IBranchContentService
-  interface ILlmKeywordExtractionManager
-  interface IContentAnalysisService
-  interface IPreferenceMatchService
-  interface IPreferenceMatchScheduler
-  interface IPreferenceEventConsumer
+  ' Hot Path: Real-time Search (UC-09)
+  interface ISearchQueryService
+  interface IQueryTokenizer
+  interface ISearchEngineClient
   
-  component QueryKeywordTokenizer
-  component SimpleSearchEngine
-  component BranchPreferenceIndex
-  component BranchContentService
-  component LlmKeywordExtractionManager
-  component ContentAnalysisManager
-  component PreferenceMatchManager
-  component PreferenceMatchScheduler
+  component SearchQueryManager
+  component SimpleKeywordTokenizer
+  component SearchEngineAdapter
+  
+  ISearchQueryService -- SearchQueryManager
+  IQueryTokenizer -- SimpleKeywordTokenizer
+  ISearchEngineClient -- SearchEngineAdapter
+  
+  ' Cold Path: Content Registration & Indexing (UC-10, UC-18)
+  interface IContentRegistrationService
+  interface IPreferenceAnalysisService
+  
+  component ContentRegistrationManager
+  component PreferenceAnalyzer
   component PreferenceMatchConsumer
-  component BranchRecommendation
   
-  ' Interface - Component connections
-  IQueryKeywordTokenizer -- QueryKeywordTokenizer
-  ISearchEngine -- SimpleSearchEngine
-  IBranchPreferenceIndex -- BranchPreferenceIndex
-  IBranchContentService -- BranchContentService
-  ILlmKeywordExtractionManager -- LlmKeywordExtractionManager
-  IContentAnalysisService -- ContentAnalysisManager
-  IPreferenceMatchService -- PreferenceMatchManager
-  IPreferenceMatchScheduler -- PreferenceMatchScheduler
-  IPreferenceEventConsumer -- PreferenceMatchConsumer
+  IContentRegistrationService -- ContentRegistrationManager
+  IPreferenceAnalysisService -- PreferenceAnalyzer
   
-  ' Hot Path: Search operations (BranchContentService -> SearchEngine)
-  BranchContentService ..( IQueryKeywordTokenizer : <<Local>>
-  QueryKeywordTokenizer ..( IBranchPreferenceIndex : <<Local>>
-  BranchPreferenceIndex ..( ISearchEngine : <<Local>>
-  SimpleSearchEngine --> BranchRecommendation : <<Local>>
+  ' Hot Path Flow (DD-06, DD-09 Approach 3)
+  SearchQueryManager ..( IQueryTokenizer : <<Local>>
+  SimpleKeywordTokenizer ..( ISearchEngineClient : <<Local>>
   
-  ' Cold Path: Content registration (BranchContentService -> LLM)
-  BranchContentService ..( ILlmKeywordExtractionManager : <<HTTP>>
-  LlmKeywordExtractionManager ..( IContentAnalysisService : <<Local>>
-  ContentAnalysisManager ..( IPreferenceMatchService : <<Local>>
-  PreferenceMatchManager ..( IPreferenceMatchScheduler : <<Local>>
-  PreferenceMatchScheduler ..( IPreferenceEventConsumer : <<Local>>
+  note right of SearchQueryManager
+    **Hot Path: 3초 이내 응답 (QAS-03)**
+    1. Customer query → Tokenize (local)
+    2. Query SearchEngine (DS-07)
+    3. Return results
+    
+    **NO LLM call in Hot Path!**
+    Ensures SLA guarantee
+  end note
+  
+  ' Cold Path Flow (DD-06)
+  ContentRegistrationManager ..( IPreferenceAnalysisService : <<Local>>
+  
+  note left of ContentRegistrationManager
+    **Cold Path: Async Indexing**
+    1. Review/BranchInfo created
+    2. LLM keyword extraction (external)
+    3. Index to SearchEngine (DS-07)
+    4. Publish BranchPreferenceCreatedEvent
+  end note
+  
+  note bottom of PreferenceMatchConsumer
+    **DD-07: Scheduling Policy**
+    - Consumes BranchPreferenceCreatedEvent
+    - Defers matching during peak time
+    - Processes in off-peak hours
+    - Protects Hot Path performance
+  end note
 }
 
 package "System Interface Layer" {
+  interface ISearchEngineRepository
+  interface ILLMAnalysisServiceClient
   interface IMessagePublisherService
   interface IMessageSubscriptionService
-  interface ISearchRepository
   
-  component MessageBrokerComponent
-  component SearchRepositoryImpl
-  database SearchDatabase
+  component ElasticSearchRepository
+  component LLMServiceClient
+  component RabbitMQAdapter
   
-  IMessagePublisherService -- MessageBrokerComponent
-  IMessageSubscriptionService -- MessageBrokerComponent
-  ISearchRepository -- SearchRepositoryImpl
-  SearchRepositoryImpl ..( SearchDatabase : <<JDBC>>
+  database SearchEngineDB
+  
+  ISearchEngineRepository -- ElasticSearchRepository
+  ILLMAnalysisServiceClient -- LLMServiceClient
+  IMessagePublisherService -- RabbitMQAdapter
+  IMessageSubscriptionService -- RabbitMQAdapter
+  
+  ElasticSearchRepository ..( SearchEngineDB : <<ElasticSearch/JDBC>>
 }
 
-' External connections
-BranchContentServiceApiImpl ..( IBranchContentService : <<HTTP>>
+' Package external connections (Interface Layer → Business Layer)
+BranchSearchController ..( ISearchQueryService : <<HTTP>>
+ReviewController ..( IContentRegistrationService : <<HTTP>>
 
-' Hot Path external connections
-BranchPreferenceIndex ..( ISearchRepository : <<JDBC>>
+' Business Layer → System Interface Layer
 
-' Cold Path external connections
-PreferenceMatchManager ..( IMessagePublisherService : <<RabbitMQ>>
+' Hot Path: No external dependencies!
+SearchEngineAdapter ..( ISearchEngineRepository : <<Local>>
+
+' Cold Path: External LLM + Message Broker
+PreferenceAnalyzer ..( ILLMAnalysisServiceClient : <<HTTPS>>
+ContentRegistrationManager ..( ISearchEngineRepository : <<index>>
+ContentRegistrationManager ..( IMessagePublisherService : <<RabbitMQ>>
 PreferenceMatchConsumer ..( IMessageSubscriptionService : <<RabbitMQ>>
-PreferenceMatchConsumer ..( ISearchRepository : <<JDBC>>
+PreferenceMatchConsumer ..( ISearchEngineRepository : <<query>>
+
+legend right
+  **Search Service: Hot/Cold Path Separation**
+  
+  **Hot Path (UC-09):**
+  - Query → Tokenizer → SearchEngine
+  - NO LLM call → SLA guaranteed
+  - Target: 95% < 3초
+  
+  **Cold Path (UC-10, UC-18):**
+  - Content → LLM analysis → Index
+  - Async event publication
+  - Scheduled matching (DD-07)
+end legend
 
 @enduml

@@ -1,145 +1,101 @@
 @startuml FaceModelServiceComponent
 ' FaceModelService_component.puml (DD-05: IPC-Based Performance Optimization)
+' Tactic: Introduce Concurrency (Pipeline Optimization), Hot Swap (Runtime Binding)
 
 package "Interface Layer" {
   interface IFaceModelServiceApi
-  component FaceModelServiceApiImpl
-  IFaceModelServiceApi -- FaceModelServiceApiImpl
+  component FaceModelIPCHandler
+  IFaceModelServiceApi -- FaceModelIPCHandler
 }
 
 package "Business Layer" {
-  interface IFaceModelService
-  interface IModelManagementPort
-  interface IFaceModelRepository
+  interface IVectorComparisonService
+  interface IFeatureExtractionService
   
   component VectorComparisonEngine
   component ModelLifecycleManager
-  component FaceModelEventProcessor
+  component FeatureExtractor
   
-  IFaceModelService -- VectorComparisonEngine
-  IModelManagementPort -- ModelLifecycleManager
+  IVectorComparisonService -- VectorComparisonEngine
+  IFeatureExtractionService -- FeatureExtractor
   
-  ' DD-05 Pipeline Optimization:
-  ' VectorComparisonEngine uses parallelized feature extraction
-  ' - requestedStage: extract features (~200ms)
-  ' - storedStage: extract features (~200ms)
-  ' - Combined via thenCombine: parallelized to ~205ms
-  ' - cosineSimilarity: vector comparison
-  ' - applyThresholds: model-based post-processing
+  ' Tactic: Introduce Concurrency (DD-05)
+  VectorComparisonEngine ..( IFeatureExtractionService : <<parallel>>
   
-  VectorComparisonEngine ..( IFaceModelRepository : <<Local>>
+  note right of VectorComparisonEngine
+    **DD-05 Pipeline Optimization**
+    CompletableFuture parallelization:
+    
+    requestedStage = extractFeatures(requestedImage)  // ~200ms
+    storedStage = extractFeatures(storedVector)       // ~200ms
+    
+    combinedResult = requestedStage.thenCombine(
+      storedStage, 
+      (req, stored) -> this.cosineSimilarity(req, stored)  // internal
+    )
+    
+    Total: max(200, 200) + similarity = ~205ms
+    vs Sequential: 200 + 200 + 5 = 405ms
+    **Improvement: 49% latency reduction**
+    
+    **Internal Methods:**
+    - cosineSimilarity(v1, v2): Cosine similarity calc
+    - parallelExtract(): Parallel feature extraction
+  end note
   
-  ' Hot Swap Support:
-  ' ModelLifecycleManager manages activeModel (AtomicReference)
-  ' - Transition: <1ms (atomic operation)
-  ' - History-based rollback support
-  ModelLifecycleManager ..( VectorComparisonEngine : <<IPC>>
+  ' Tactic: Runtime Binding (Hot Swap)
+  ModelLifecycleManager ..( VectorComparisonEngine : <<atomic>>
   
-  FaceModelEventProcessor ..( IFaceModelService : <<use>>
+  note left of ModelLifecycleManager
+    **Tactic: Runtime Binding (QAS-06)**
+    - activeModel: AtomicReference<Model>
+    - modelHistory: List<ModelVersion>
+    - Rollback support (< 1ms)
+    - No service downtime during model update
+  end note
 }
 
 package "System Interface Layer" {
-  interface IFaceModelRepository
   interface IModelVersionRepository
+  interface IMLInferenceEngine
   interface IMessagePublisherService
   
-  component FaceModelRepositoryImpl
-  component ModelVersionRepositoryImpl
-  component MessageBrokerComponent
-  database VectorDatabase
-  database ModelVersionDatabase
+  component ModelVersionJpaRepository
+  component MLInferenceEngineAdapter
+  component RabbitMQAdapter
   
-  IFaceModelRepository -- FaceModelRepositoryImpl
-  IModelVersionRepository -- ModelVersionRepositoryImpl
-  IMessagePublisherService -- MessageBrokerComponent
+  database ModelMetadataDB
   
-  FaceModelRepositoryImpl ..( VectorDatabase : <<JDBC>>
-  ModelVersionRepositoryImpl ..( ModelVersionDatabase : <<JDBC>>
+  IModelVersionRepository -- ModelVersionJpaRepository
+  IMLInferenceEngine -- MLInferenceEngineAdapter
+  IMessagePublisherService -- RabbitMQAdapter
+  
+  ModelVersionJpaRepository ..( ModelMetadataDB : <<JDBC>>
 }
 
-' External connections
-FaceModelServiceApiImpl ..( IFaceModelService : <<HTTP>>
-FaceModelServiceApiImpl ..( IFaceModelRepository : <<Local>>
+' Package external connections (Interface Layer → Business Layer)
+FaceModelIPCHandler ..( IVectorComparisonService : <<IPC/gRPC>>
 
-' Business to System Interface
-VectorComparisonEngine ..( IFaceModelRepository : <<JDBC>>
+' Business Layer → System Interface Layer
+FeatureExtractor ..( IMLInferenceEngine : <<Local>>
 ModelLifecycleManager ..( IModelVersionRepository : <<JDBC>>
-FaceModelEventProcessor ..( IMessagePublisherService : <<RabbitMQ>>
+ModelLifecycleManager ..( IMLInferenceEngine : <<deploy/rollback>>
+ModelLifecycleManager ..( IMessagePublisherService : <<RabbitMQ>>
 
-note top of VectorComparisonEngine
-  **DD-05 Pipeline Optimization**
-  
-  Performance Metrics:
-  • Feature Extraction: ~200ms (parallel)
-  • Vector Matching: ~150ms (parallel)
-  • Combined: max(200, 150) = ~205ms
-  • vs Sequential: 400ms
-  • Improvement: 49% latency reduction ✅
-  
-  Tactics Applied:
-  - Introduce Concurrency (CompletableFuture)
-  - Data Pre-Fetching (cache integration)
-  - Shared Memory (IPC optimization)
-  - Hot Swap (atomic model switching)
+note bottom of MLInferenceEngineAdapter
+  **Internal ML Inference Engine Adapter**
+  - deployModel(version): Load new model
+  - rollbackModel(version): Revert to previous
+  - extractFeatures(image): Feature extraction
+  - getModelMetrics(): Performance data
 end note
 
-@enduml
-OtherServices --> ServiceApi : calls (vector operations)
-
-' Data Persistence
-FaceRepoImpl --> VectorDB : reads/writes
-ModelRepoImpl --> ModelDB : reads/writes
-
-' Message Broker
-EventProcessor --> Broker : subscribes
-Broker --> EventProcessor : publishes events
-
-' Port Interfaces
-ServiceApiImpl --> FaceRepo : uses
-ServiceApiImpl --> ModelRepo : uses
-
-' Internal ML Engine Integration
-ModelManager --> PanDokuService : deployModel()
-ModelManager --> PanDokuService : trainModel()
-ModelManager --> PanDokuService : monitorModel()
-ModelManager --> PanDokuService : getModelStatus()
-
-note right of ServiceApi
-  External API for face verification
-  - calculateSimilarityScore()
-  - verifyFace()
-  - registerFaceVector()
-  - getSavedFaceVectors()
-end note
-
-note right of PanDokuService
-  Internal ML Engine for model lifecycle
-  - deployModel(): Deploy new model versions
-  - trainModel(): Train models with datasets
-  - monitorModel(): Monitor performance
-  - getModelStatus(): Get deployment status
-end note
-
-
-note right of VectorEngine
-  Core algorithm: Cosine similarity
-  - calculateSimilarityScore()
-  - createVerificationResult()
-  - isModelLoaded()
-end note
-
-note right of ModelManager
-  Model lifecycle management
-  - loadNewModel()
-  - rollbackToPreviousModel()
-  - getActiveModelVersion()
-  - getModelMetadata()
-end note
-
-note right of Root
-  Singleton DI Container
-  Manages component lifecycle
-  and dependency injection
-end note
+legend right
+  **FaceModel Service: Performance-Critical**
+  - Co-located with Access Service (DD-05)
+  - IPC/gRPC for minimum latency
+  - Pipeline parallelization: 49% faster
+  - Hot swap: Zero-downtime model updates
+end legend
 
 @enduml

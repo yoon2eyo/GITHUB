@@ -1,100 +1,97 @@
 @startuml RealTimeAccessServiceComponent
 ' RealTimeAccessService_component.puml (DD-05: Performance Optimization)
+' Tactic: Introduce Concurrency, Data Pre-Fetching, Encapsulate
 
 package "Interface Layer" {
   interface IAccessControlApi
-  interface IFaceVerificationApi
+  interface IQRAccessApi
   
-  component AccessControlApiImpl
-  component FaceVerificationApiImpl
+  component AccessControlController
+  component QRAccessController
   
-  IAccessControlApi -- AccessControlApiImpl
-  IFaceVerificationApi -- FaceVerificationApiImpl
+  IAccessControlApi -- AccessControlController
+  IQRAccessApi -- QRAccessController
 }
 
 package "Business Layer" {
-  interface IAccessVectorRepository
-  interface IFaceModelService
-  interface IAccessServiceApi
-  interface IMessagePublisherService
+  interface IAccessAuthorizationService
+  interface IGateControlService
+  interface IAccessEventPublisher
   
   component AccessAuthorizationManager
   component GateController
   component FaceVectorCache
-  
-  interface IFaceModelManagement
-  interface IVectorComparison
-  component ModelLifecycleManager
-  component VectorComparisonEngine
-  
   component AccessEventProcessor
   
-  ' Access Service connections
-  IAccessServiceApi -- AccessAuthorizationManager
+  IAccessAuthorizationService -- AccessAuthorizationManager
+  IGateControlService -- GateController
+  IAccessEventPublisher -- AccessEventProcessor
+  
+  ' Tactic: Data Pre-Fetching (DD-05)
   AccessAuthorizationManager ..( FaceVectorCache : <<warmUp>>
-  FaceVectorCache ..( IAccessVectorRepository : <<getOrLoad>>
-  AccessAuthorizationManager ..( GateController : <<controlGate>>
+  AccessAuthorizationManager ..( IGateControlService : <<Local>>
   
-  ' Face Model connections (IPC - Same Physical Node)
-  IFaceModelService -- VectorComparisonEngine
-  IFaceModelManagement -- ModelLifecycleManager
-  AccessAuthorizationManager ..( IFaceModelService : <<calculateSimilarityScore>>
-  
-  ' Pipeline Optimization (Parallel Processing)
-  note on link AccessAuthorizationManager to IFaceModelService
-    DD-05 Pipeline Optimization:
-    - Feature Extraction (parallel)
-    - Vector Matching (parallel)
-    - Combined latency: ~205ms
+  ' Tactic: Introduce Concurrency (Pipeline Optimization)
+  note right of AccessAuthorizationManager
+    **DD-05 Pipeline Optimization**
+    1. Receive face photo from Equipment
+    2. Extract features (parallel stage)
+    3. IPC call to FaceModel Service
+    4. Vector matching (parallel stage)
+    5. Gate control decision
+    
+    Target: 3초 이내 출입 (QAS-02)
   end note
   
-  ' Hot Swap Support
-  ModelLifecycleManager ..( VectorComparisonEngine : <<IPC>>
-  note on link ModelLifecycleManager to VectorComparisonEngine
-    Hot Swap: 
-    - activeModel (AtomicReference)
-    - modelHistory (Rollback support)
-    - Transition time: <1ms
-  end note
-  
-  ' Event handling
-  AccessEventProcessor ..( IMessagePublisherService : <<RabbitMQ>>
+  AccessEventProcessor ..( IAccessAuthorizationService : <<Local>>
 }
 
 package "System Interface Layer" {
-  interface IAccessRepository
+  interface IAccessVectorRepository
+  interface IFaceModelServiceClient
+  interface IEquipmentGateway
   interface IMessagePublisherService
-  interface IMessageSubscriptionService
   
-  component AccessRepositoryImpl
-  component MessageBrokerComponent
-  database AccessDatabase
+  component VectorRepository
+  component FaceModelServiceIPCClient
+  component EquipmentGatewayAdapter
+  component RabbitMQAdapter
+  
   database VectorDatabase
   
-  IAccessRepository -- AccessRepositoryImpl
-  IMessagePublisherService -- MessageBrokerComponent
-  IMessageSubscriptionService -- MessageBrokerComponent
+  IAccessVectorRepository -- VectorRepository
+  IFaceModelServiceClient -- FaceModelServiceIPCClient
+  IEquipmentGateway -- EquipmentGatewayAdapter
+  IMessagePublisherService -- RabbitMQAdapter
   
-  AccessRepositoryImpl ..( AccessDatabase : <<JDBC>>
-  AccessRepositoryImpl ..( VectorDatabase : <<JDBC>>
+  VectorRepository ..( VectorDatabase : <<JDBC>>
 }
 
-' External connections
-AccessControlApiImpl ..( IAccessServiceApi : <<HTTP>>
-FaceVerificationApiImpl ..( IFaceModelService : <<IPC>>
+' Package external connections (Interface Layer → Business Layer)
+AccessControlController ..( IAccessAuthorizationService : <<HTTP>>
+QRAccessController ..( IAccessAuthorizationService : <<HTTP>>
 
-' Business to System Interface
-AccessAuthorizationManager ..( IAccessRepository : <<JDBC>>
-AccessAuthorizationManager ..( IMessagePublisherService : <<RabbitMQ>>
-AccessEventProcessor ..( IMessageSubscriptionService : <<RabbitMQ>>
+' Business Layer → System Interface Layer
+FaceVectorCache ..( IAccessVectorRepository : <<JDBC>>
+AccessAuthorizationManager ..( IFaceModelServiceClient : <<IPC/gRPC>>
+GateController ..( IEquipmentGateway : <<HTTPS>>
+AccessEventProcessor ..( IMessagePublisherService : <<RabbitMQ>>
 
-note top of AccessAuthorizationManager
-  **DD-05 Data Pre-Fetching**
-  FaceVectorCache:
-  - Warm-up: Pre-load hot face IDs
-  - Cache hit rate: >90%
-  - Removes DB I/O latency
-  - Memory-optimized: LRU eviction
+note top of FaceVectorCache
+  **Tactic: Data Pre-Fetching (DD-05)**
+  - Startup: Load top 10K active face vectors
+  - Runtime: LRU eviction (24h TTL)
+  - Hit rate: >90% target
+  - Memory: ~500MB (10K × 512 dims)
+  - Removes DB I/O from hot path
+end note
+
+note bottom of FaceModelServiceIPCClient
+  **Tactic: Same Physical Node (DD-05)**
+  - IPC/gRPC for minimum latency
+  - Shared memory optimization
+  - No network overhead
+  - calculateSimilarityScore() ~205ms
 end note
 
 @enduml
