@@ -42,13 +42,13 @@ package "Business Layer" {
   IRequestSignatureVerifier -- RequestSignatureVerifier
   
   ' Business layer internal relationships
-  RequestRouter ..( ISecurityService
-  RequestRouter ..( IServiceDiscoveryService
-  RequestRouter ..( ILoadBalancingService
+  RequestRouter ..( ISecurityService : <<Local>>
+  RequestRouter ..( IServiceDiscoveryService : <<Local>>
+  RequestRouter ..( ILoadBalancingService : <<Local>>
   
-  SecurityManager ..( IAuthenticationService
-  SecurityManager ..( IAuthorizationService
-  SecurityManager ..( IRequestSignatureVerifier
+  SecurityManager ..( IAuthenticationService : <<Local>>
+  SecurityManager ..( IAuthorizationService : <<Local>>
+  SecurityManager ..( IRequestSignatureVerifier : <<Local>>
 }
 
 package "System Interface Layer" {
@@ -76,16 +76,16 @@ package "System Interface Layer" {
 
 ' 패키지 외부 연결
 ' Interface Layer -> Business Layer
-ApiGatewayApiImpl ..( IRequestRoutingService : <<use>>
-GatewayManagementApiImpl ..( IServiceDiscoveryService : <<use>>
+ApiGatewayApiImpl ..( IRequestRoutingService : <<HTTP>>
+GatewayManagementApiImpl ..( IServiceDiscoveryService : <<HTTP>>
 
 ' Business Layer -> System Interface Layer
-ServiceDiscoveryManager ..( IServiceRegistry : <<use>>
-LoadBalancer ..( ICircuitBreaker : <<use>>
-LoadBalancer ..( IRateLimiter : <<use>>
-AuthenticationManager ..( IAuthenticationClient : <<HTTP>>
-AuthorizationManager ..( IAuthorizationClient : <<HTTP>>
-RequestRouter ..( IMessagePublisherService : <<publish>>
-SecurityManager ..( IMessagePublisherService : <<publish>>
+ServiceDiscoveryManager ..( IServiceRegistry : <<Local>>
+LoadBalancer ..( ICircuitBreaker : <<Local>>
+LoadBalancer ..( IRateLimiter : <<Local>>
+AuthenticationManager ..( IAuthenticationClient : <<gRPC>>
+AuthorizationManager ..( IAuthorizationClient : <<gRPC>>
+RequestRouter ..( IMessagePublisherService : <<RabbitMQ>>
+SecurityManager ..( IMessagePublisherService : <<RabbitMQ>>
 
 @enduml

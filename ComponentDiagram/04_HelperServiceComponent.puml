@@ -32,38 +32,35 @@ package "Business Layer" {
 
 package "System Interface Layer" {
   interface IHelperRepository
-  interface IAIPanDokuServiceApi
+  interface IPanDokuModelService [Internal ML Engine]
   interface IMessagePublisherService
   interface IMessageSubscriptionService
   
   component HelperRepositoryImpl
-  component AIPanDokuServiceClient
   component MessageBrokerComponent
   database HelperDatabase
   
   IHelperRepository -- HelperRepositoryImpl
-  IAIPanDokuServiceApi -- AIPanDokuServiceClient
   IMessagePublisherService -- MessageBrokerComponent
   IMessageSubscriptionService -- MessageBrokerComponent
-  HelperRepositoryImpl ..( HelperDatabase
+  HelperRepositoryImpl ..( HelperDatabase : <<JDBC>>
 }
 
 ' 패키지 외부 연결
 ' Interface Layer -> Business Layer
-HelperTaskManagementApi ..( ITaskManagementService : <<use>>
-HelperTaskManagementApi ..( IRewardConfirmationService : <<use>>
+HelperTaskManagementApi ..( ITaskManagementService : <<HTTP>>
+HelperTaskManagementApi ..( IRewardConfirmationService : <<HTTP>>
 
 ' Business Layer -> Message Broker 연결
-TaskManagementManager ..( IMessagePublisherService : <<publish>>
-RewardConfirmationManager ..( IMessagePublisherService : <<publish>>
-HelperEventConsumerAdapter ..( IMessageSubscriptionService : <<subscribe>>
+TaskManagementManager ..( IMessagePublisherService : <<RabbitMQ>>
+RewardConfirmationManager ..( IMessagePublisherService : <<RabbitMQ>>
+HelperEventConsumerAdapter ..( IMessageSubscriptionService : <<RabbitMQ>>
 
 ' Business Layer -> System Interface Layer
-TaskManagementManager ..( IHelperRepository : <<persist>>
-TaskManagementManager ..( IAIPanDokuServiceApi : <<HTTP>>
-RewardConfirmationManager ..( IHelperRepository : <<persist>>
-AIPanDokuConsumer ..( IHelperRepository : <<persist>>
-AIPanDokuConsumer ..( IAIPanDokuServiceApi : <<HTTP>>
-RewardUpdateConsumer ..( IHelperRepository : <<persist>>
+TaskManagementManager ..( IHelperRepository : <<JDBC>>
+RewardConfirmationManager ..( IHelperRepository : <<JDBC>>
+AIPanDokuConsumer ..( IHelperRepository : <<JDBC>>
+AIPanDokuConsumer ..( IPanDokuModelService : <<Local>>
+RewardUpdateConsumer ..( IHelperRepository : <<JDBC>>
 
 @enduml

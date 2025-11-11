@@ -35,12 +35,12 @@ package "System Interface Layer" {
 
 ' 패키지 외부 연결
 ' Interface Layer -> Business Layer
-NotificationApiImpl ..( INotificationDispatcherService : <<use>>
+NotificationApiImpl ..( INotificationDispatcherService : <<HTTP>>
 
 ' Business Layer -> System Interface Layer
-NotificationDispatcherManager ..( IPushNotificationGateway : <<use>>
-NotificationDispatcherConsumer ..( IPushNotificationGateway : <<use>>
-NotificationDispatcherConsumer ..( IMessageSubscriptionService : <<subscribe>>
+NotificationDispatcherManager ..( IPushNotificationGateway : <<HTTP>>
+NotificationDispatcherConsumer ..( IPushNotificationGateway : <<HTTP>>
+NotificationDispatcherConsumer ..( IMessageSubscriptionService : <<RabbitMQ>>
 
 legend right
   Notification Dispatcher structure

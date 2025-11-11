@@ -1,5 +1,5 @@
 @startuml RealTimeAccessServiceComponent
-' RealTimeAccessService_component.puml (가이드 준수)
+' RealTimeAccessService_component.puml (DD-05: Performance Optimization)
 
 package "Interface Layer" {
   interface IAccessControlApi
@@ -13,57 +13,88 @@ package "Interface Layer" {
 }
 
 package "Business Layer" {
-  interface IAccessVerificationService
-  interface IFaceVerificationService
+  interface IAccessVectorRepository
+  interface IFaceModelService
+  interface IAccessServiceApi
+  interface IMessagePublisherService
   
-  component AccessVerificationManager
+  component AccessAuthorizationManager
+  component GateController
+  component FaceVectorCache
+  
+  interface IFaceModelManagement
+  interface IVectorComparison
+  component ModelLifecycleManager
+  component VectorComparisonEngine
+  
   component AccessEventProcessor
   
-  ' Service implementations
-  IAccessVerificationService -- AccessVerificationManager
-  IFaceVerificationService -- AccessVerificationManager
+  ' Access Service connections
+  IAccessServiceApi -- AccessAuthorizationManager
+  AccessAuthorizationManager ..( FaceVectorCache : <<warmUp>>
+  FaceVectorCache ..( IAccessVectorRepository : <<getOrLoad>>
+  AccessAuthorizationManager ..( GateController : <<controlGate>>
   
-  ' Business layer internal relationships
-  AccessVerificationManager ..( IFaceVerificationService : <<use>>
-  AccessEventProcessor ..( IAccessVerificationService : <<use>>
+  ' Face Model connections (IPC - Same Physical Node)
+  IFaceModelService -- VectorComparisonEngine
+  IFaceModelManagement -- ModelLifecycleManager
+  AccessAuthorizationManager ..( IFaceModelService : <<calculateSimilarityScore>>
+  
+  ' Pipeline Optimization (Parallel Processing)
+  note on link AccessAuthorizationManager to IFaceModelService
+    DD-05 Pipeline Optimization:
+    - Feature Extraction (parallel)
+    - Vector Matching (parallel)
+    - Combined latency: ~205ms
+  end note
+  
+  ' Hot Swap Support
+  ModelLifecycleManager ..( VectorComparisonEngine : <<IPC>>
+  note on link ModelLifecycleManager to VectorComparisonEngine
+    Hot Swap: 
+    - activeModel (AtomicReference)
+    - modelHistory (Rollback support)
+    - Transition time: <1ms
+  end note
+  
+  ' Event handling
+  AccessEventProcessor ..( IMessagePublisherService : <<RabbitMQ>>
 }
 
 package "System Interface Layer" {
   interface IAccessRepository
-  interface IFaceModelServiceApi
   interface IMessagePublisherService
   interface IMessageSubscriptionService
   
   component AccessRepositoryImpl
   component MessageBrokerComponent
-  component FaceModelServiceAdapter
   database AccessDatabase
+  database VectorDatabase
   
   IAccessRepository -- AccessRepositoryImpl
   IMessagePublisherService -- MessageBrokerComponent
   IMessageSubscriptionService -- MessageBrokerComponent
-  IFaceModelServiceApi -- FaceModelServiceAdapter
   
   AccessRepositoryImpl ..( AccessDatabase : <<JDBC>>
+  AccessRepositoryImpl ..( VectorDatabase : <<JDBC>>
 }
 
-' 패키지 외부 연결
-' Interface Layer -> Business Layer
-AccessControlApiImpl ..( IAccessVerificationService : <<use>>
-FaceVerificationApiImpl ..( IFaceModelService : <<use>>
+' External connections
+AccessControlApiImpl ..( IAccessServiceApi : <<HTTP>>
+FaceVerificationApiImpl ..( IFaceModelService : <<IPC>>
 
-' Business Layer -> System Interface Layer
-AccessVerificationManager ..( IAccessRepository : <<persist>>
-AccessVerificationManager ..( IMessagePublisherService : <<publish>>
-AccessVerificationManager ..( IFaceModelServiceApi : <<use>> 
+' Business to System Interface
+AccessAuthorizationManager ..( IAccessRepository : <<JDBC>>
+AccessAuthorizationManager ..( IMessagePublisherService : <<RabbitMQ>>
+AccessEventProcessor ..( IMessageSubscriptionService : <<RabbitMQ>>
 
-' Event Consumers -> Message Subscription
-AccessEventProcessor ..( IMessageSubscriptionService : <<subscribe>>
-
-note right of FaceModelServiceAdapter
-  External service adapter
-  Calls IFaceModelServiceApi
-  from FaceModelService
+note top of AccessAuthorizationManager
+  **DD-05 Data Pre-Fetching**
+  FaceVectorCache:
+  - Warm-up: Pre-load hot face IDs
+  - Cache hit rate: >90%
+  - Removes DB I/O latency
+  - Memory-optimized: LRU eviction
 end note
 
 @enduml

@@ -56,13 +56,13 @@ package "System Interface Layer" {
 
 ' 패키지 외부 연결
 ' Interface Layer -> Business Layer
-BranchOwnerApiImpl ..( IBranchOwnerManagementService : <<use>>
-BranchQueryApiImpl ..( IBranchInfoService : <<use>>
+BranchOwnerApiImpl ..( IBranchOwnerManagementService : <<HTTP>>
+BranchQueryApiImpl ..( IBranchInfoService : <<HTTP>>
 
 ' Business Layer -> System Interface Layer
-BranchOwnerManager ..( IBranchRepository : <<persist>>
-BranchOwnerManager ..( IAuthRepository : <<query>>
-BranchOwnerManager ..( IMessagePublisherService : <<publish>>
+BranchOwnerManager ..( IBranchRepository : <<JDBC>>
+BranchOwnerManager ..( IAuthRepository : <<JDBC>>
+BranchOwnerManager ..( IMessagePublisherService : <<RabbitMQ>>
 BranchInfoValidator ..( IBranchRepository : <<query>>
 BranchEventProcessor ..( IBranchRepository : <<persist>>
 BranchEventProcessor ..( IMessageSubscriptionService : <<subscribe>>

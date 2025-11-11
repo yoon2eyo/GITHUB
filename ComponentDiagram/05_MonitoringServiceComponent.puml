@@ -62,24 +62,24 @@ package "System Interface Layer" {
   ISchedulerService -- SchedulerServiceImpl
   
   ' System dependencies
-  MonitorRepositoryImpl ..( MonitorDatabase
-  MessageBrokerComponent ..( IMonitorEventConsumer : <<IDomainEvent>>
+  MonitorRepositoryImpl ..( MonitorDatabase : <<JDBC>>
+  MessageBrokerComponent ..( IMonitorEventConsumer : <<RabbitMQ>>
 }
 
 ' 패키지 외부 연결
 ' Interface Layer -> Business Layer
-MonitoringServiceApiImpl ..( IEquipmentStatusService : <<use>>
+MonitoringServiceApiImpl ..( IEquipmentStatusService : <<HTTP>>
 
 ' Business Layer -> Message Broker 연결
-StatusReceiverManager ..( IMessagePublisherService : <<publish>>
-HeartbeatChecker ..( IMessagePublisherService : <<publish>>
-MonitorEventConsumer ..( IMessageSubscriptionService : <<subscribe>>
+StatusReceiverManager ..( IMessagePublisherService : <<RabbitMQ>>
+HeartbeatChecker ..( IMessagePublisherService : <<RabbitMQ>>
+MonitorEventConsumer ..( IMessageSubscriptionService : <<RabbitMQ>>
 
 ' Business Layer -> System Interface Layer
-StatusReceiverManager ..( IMonitorRepository : <<persist>>
-HeartbeatChecker ..( IMonitorRepository : <<persist>>
-MonitorEventConsumer ..( IMonitorRepository : <<persist>>
-HeartbeatChecker ..( ISchedulerService : <<schedule>>
+StatusReceiverManager ..( IMonitorRepository : <<JDBC>>
+HeartbeatChecker ..( IMonitorRepository : <<JDBC>>
+MonitorEventConsumer ..( IMonitorRepository : <<JDBC>>
+HeartbeatChecker ..( ISchedulerService : <<Local>>
 
 legend right
   Monitoring Service structure

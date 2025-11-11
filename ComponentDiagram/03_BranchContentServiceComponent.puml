@@ -1,5 +1,5 @@
 @startuml BranchContentServiceComponent
-' BranchContentService_component.puml (가이드 준수)
+' BranchContentService_component.puml (DD-06: Hot/Cold Path 통합)
 
 package "Interface Layer" {
   interface IBranchContentServiceApi
@@ -8,74 +8,76 @@ package "Interface Layer" {
 }
 
 package "Business Layer" {
+  interface IQueryKeywordTokenizer
+  interface ISearchEngine
+  interface IBranchPreferenceIndex
+  interface IBranchContentService
+  interface ILlmKeywordExtractionManager
   interface IContentAnalysisService
   interface IPreferenceMatchService
-  interface IKeywordExtractionService
+  interface IPreferenceMatchScheduler
   interface IPreferenceEventConsumer
   
+  component QueryKeywordTokenizer
+  component SimpleSearchEngine
+  component BranchPreferenceIndex
   component BranchContentService
   component LlmKeywordExtractionManager
-  component PreferenceMatchManager
   component ContentAnalysisManager
+  component PreferenceMatchManager
   component PreferenceMatchScheduler
   component PreferenceMatchConsumer
-  component BranchPreferenceIndex
+  component BranchRecommendation
   
-  ' Service implementations
+  ' Interface - Component connections
+  IQueryKeywordTokenizer -- QueryKeywordTokenizer
+  ISearchEngine -- SimpleSearchEngine
+  IBranchPreferenceIndex -- BranchPreferenceIndex
+  IBranchContentService -- BranchContentService
+  ILlmKeywordExtractionManager -- LlmKeywordExtractionManager
   IContentAnalysisService -- ContentAnalysisManager
   IPreferenceMatchService -- PreferenceMatchManager
-  IKeywordExtractionService -- LlmKeywordExtractionManager
+  IPreferenceMatchScheduler -- PreferenceMatchScheduler
   IPreferenceEventConsumer -- PreferenceMatchConsumer
-
-  ' BranchContentService relationships
-  BranchContentService ..( IContentAnalysisService : <<use>>
-  BranchContentService ..( IPreferenceMatchService : <<use>>
-  IBranchContentServiceApi -- BranchContentService
   
-  ' Business layer internal relationships
-  PreferenceMatchManager -- BranchPreferenceIndex
-  PreferenceMatchScheduler ..( IPreferenceMatchService : <<use>>
-  ContentAnalysisManager ..( IPreferenceMatchService : <<use>>
+  ' Hot Path: Search operations (BranchContentService -> SearchEngine)
+  BranchContentService ..( IQueryKeywordTokenizer : <<Local>>
+  QueryKeywordTokenizer ..( IBranchPreferenceIndex : <<Local>>
+  BranchPreferenceIndex ..( ISearchEngine : <<Local>>
+  SimpleSearchEngine --> BranchRecommendation : <<Local>>
   
-  ' LLM Keyword Extraction relationships
-  ContentAnalysisManager ..( IKeywordExtractionService : <<use>>
-  LlmKeywordExtractionManager ..( IContentAnalysisService : <<notify>>
+  ' Cold Path: Content registration (BranchContentService -> LLM)
+  BranchContentService ..( ILlmKeywordExtractionManager : <<HTTP>>
+  LlmKeywordExtractionManager ..( IContentAnalysisService : <<Local>>
+  ContentAnalysisManager ..( IPreferenceMatchService : <<Local>>
+  PreferenceMatchManager ..( IPreferenceMatchScheduler : <<Local>>
+  PreferenceMatchScheduler ..( IPreferenceEventConsumer : <<Local>>
 }
+
 package "System Interface Layer" {
-  interface ISearchRepository
-  interface ILLMAnalysisServiceApi
   interface IMessagePublisherService
   interface IMessageSubscriptionService
+  interface ISearchRepository
   
-  component SearchRepositoryImpl
-  component LLMAnalysisServiceClient
   component MessageBrokerComponent
+  component SearchRepositoryImpl
   database SearchDatabase
   
-  ' System interface implementations
-  ISearchRepository -- SearchRepositoryImpl
-  ILLMAnalysisServiceApi -- LLMAnalysisServiceClient
   IMessagePublisherService -- MessageBrokerComponent
   IMessageSubscriptionService -- MessageBrokerComponent
-  
-  ' System dependencies
-  SearchRepositoryImpl ..( SearchDatabase
-  MessageBrokerComponent ..( IPreferenceEventConsumer : <<IDomainEvent>>
+  ISearchRepository -- SearchRepositoryImpl
+  SearchRepositoryImpl ..( SearchDatabase : <<JDBC>>
 }
 
-' 패키지 외부 연결
-' Interface Layer -> Business Layer
-BranchContentServiceApiImpl ..( IBranchContentServiceApi : <<use>>
+' External connections
+BranchContentServiceApiImpl ..( IBranchContentService : <<HTTP>>
 
-' Business Layer -> Message Broker 연결
-ContentAnalysisManager ..( IMessagePublisherService : <<publish>>
-PreferenceMatchManager ..( IMessagePublisherService : <<publish>>
-PreferenceMatchConsumer ..( IMessageSubscriptionService : <<subscribe>>
+' Hot Path external connections
+BranchPreferenceIndex ..( ISearchRepository : <<JDBC>>
 
-' Business Layer -> System Interface Layer
-LlmKeywordExtractionManager ..( ILLMAnalysisServiceApi : <<HTTP>>
-ContentAnalysisManager ..( ISearchRepository : <<persist>>
-PreferenceMatchManager ..( ISearchRepository : <<persist>>
-PreferenceMatchConsumer ..( ISearchRepository : <<persist>>
+' Cold Path external connections
+PreferenceMatchManager ..( IMessagePublisherService : <<RabbitMQ>>
+PreferenceMatchConsumer ..( IMessageSubscriptionService : <<RabbitMQ>>
+PreferenceMatchConsumer ..( ISearchRepository : <<JDBC>>
 
 @enduml

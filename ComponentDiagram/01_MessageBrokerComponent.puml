@@ -34,14 +34,14 @@ package "Business Layer" {
   IMessagePublisherService -- MessageBrokerCoordinator
   IMessageSubscriptionService -- MessageBrokerCoordinator
   
-  MessageBrokerCoordinator ..( ITopicRegistry
-  MessageBrokerCoordinator ..( IEventPublisher
-  MessageBrokerCoordinator ..( ISubscriptionManager
+  MessageBrokerCoordinator ..( ITopicRegistry : <<Local>>
+  MessageBrokerCoordinator ..( IEventPublisher : <<Local>>
+  MessageBrokerCoordinator ..( ISubscriptionManager : <<Local>>
   
-  EventPublisher ..( IAsyncEventDispatcher
-  EventPublisher ..( ITopicRegistry
+  EventPublisher ..( IAsyncEventDispatcher : <<Local>>
+  EventPublisher ..( ITopicRegistry : <<Local>>
   
-  SubscriptionManager ..( ITopicRegistry
+  SubscriptionManager ..( ITopicRegistry : <<Local>>
   
   AsyncEventDispatcher ..( IDomainEvent
 }
@@ -79,7 +79,7 @@ package "System Interface Layer" {
   IMonitorRepository -- MonitorRepositoryImpl
   IAccessVectorRepository -- AccessVectorRepositoryImpl
   
-  HelperEventConsumerAdapter ..( IMessageSubscriptionService : <<required>>
+  HelperEventConsumerAdapter ..( IMessageSubscriptionService : <<Local>>
   
   AuthRepositoryImpl ..( DB_AUTH : <<JDBC>>
   HelperRepositoryImpl ..( DB_HELPER : <<JDBC>>
@@ -89,12 +89,12 @@ package "System Interface Layer" {
 }
 
 ' 패키지 외부 연결 (하단부에 작성)
-IMessageSubscriptionService -up-( MessageBrokerCoordinator : <<implements>>
-IHelperEventConsumer -up-( HelperEventConsumerAdapter : <<provided>>
+IMessageSubscriptionService -up-( MessageBrokerCoordinator : <<Local>>
+IHelperEventConsumer -up-( HelperEventConsumerAdapter : <<Local>>
 
-' AsyncEventDispatcher에서 컨슈머들로 IDomainEvent 전달
-AsyncEventDispatcher --> PreferenceMatchConsumer : IDomainEvent
-AsyncEventDispatcher --> NotificationDispatcherConsumer : IDomainEvent
-AsyncEventDispatcher --> HelperEventConsumerAdapter : IDomainEvent
+' AsyncEventDispatcher에서 컨슈머들로 IDomainEvent 전달 (RabbitMQ)
+AsyncEventDispatcher --> PreferenceMatchConsumer : <<RabbitMQ>> IDomainEvent
+AsyncEventDispatcher --> NotificationDispatcherConsumer : <<RabbitMQ>> IDomainEvent
+AsyncEventDispatcher --> HelperEventConsumerAdapter : <<RabbitMQ>> IDomainEvent
 
 @enduml

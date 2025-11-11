@@ -27,21 +27,19 @@ package "Business Layer" {
   
   ' Business layer internal relationships
   ContentAnalyzer ..( IKeywordExtractionService : <<use>>
-  IndexUpdateProcessor ..( IContentAnalysisService : <<use>>
+  IndexUpdateProcessor ..( IContentAnalysisService : <<Local>>
 }
 
 package "System Interface Layer" {
-  interface IPanDokuModelService
+  interface IPanDokuModelService [Internal ML Engine]
   interface ISearchRepository
   interface IMessagePublisherService
   
-  component PanDokuModelServiceAdapter
   component SearchRepositoryImpl
   component MessageBrokerComponent
   
   database SearchDatabase
   
-  IPanDokuModelService -- PanDokuModelServiceAdapter
   ISearchRepository -- SearchRepositoryImpl
   IMessagePublisherService -- MessageBrokerComponent
   
@@ -50,13 +48,13 @@ package "System Interface Layer" {
 
 ' 패키지 외부 연결
 ' Interface Layer -> Business Layer
-AIServiceApiImpl ..( IKeywordExtractionService : <<use>>
-NLPServiceApiImpl ..( IContentAnalysisService : <<use>>
+AIServiceApiImpl ..( IKeywordExtractionService : <<HTTP>>
+NLPServiceApiImpl ..( IContentAnalysisService : <<HTTP>>
 
-' Business Layer -> System Interface Layer
-LLMKeywordExtractor ..( IPanDokuModelService : <<HTTP>>
-ContentAnalyzer ..( ISearchRepository : <<query>>
-ContentAnalyzer ..( IMessagePublisherService : <<publish>>
-IndexUpdateProcessor ..( ISearchRepository : <<persist>>
+' Business Layer -> System Interface Layer (Internal ML Engine)
+LLMKeywordExtractor ..( IPanDokuModelService : <<Local>>
+ContentAnalyzer ..( ISearchRepository : <<JDBC>>
+ContentAnalyzer ..( IMessagePublisherService : <<RabbitMQ>>
+IndexUpdateProcessor ..( ISearchRepository : <<JDBC>>
 
 @enduml

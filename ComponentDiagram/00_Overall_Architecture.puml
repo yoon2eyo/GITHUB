@@ -12,7 +12,6 @@ actor "Operations Center" as Ops
 cloud "External Partners" {
   component "ICreditCardVerificationService" as CC
   component "ILLMAnalysisService" as ExtLLM
-  component "IPanDokuModelService" as PanDoku
 }
 
 node "Branch Equipment & Cameras" as Equipment
@@ -35,6 +34,7 @@ rectangle "Smart Fitness Cloud" {
 
   package "AI & ML Services" {
     component "FaceModelServiceComponent" as FaceModel
+    component "IPanDokuModelService (Internal ML Engine)" as PanDoku [Internal]
   }
 }
 
@@ -43,37 +43,40 @@ Helper --> Gateway : HTTPS /helper
 Manager --> Gateway : HTTPS /branch
 Ops --> Gateway : HTTPS /ops console
 
-Gateway --> Auth
-Gateway --> Search
-Gateway --> HelperSvc
-Gateway --> BranchOwner
-Gateway --> Access
+Gateway --> Auth : <<HTTP>>
+Gateway --> Search : <<HTTP>>
+Gateway --> HelperSvc : <<HTTP>>
+Gateway --> BranchOwner : <<HTTP>>
+Gateway --> Access : <<HTTP>>
 
-Auth --> CC : Card verify
-Search --> ExtLLM : Keyword extraction
-Search --> AIService : LLM analysis
-HelperSvc --> PanDoku : Task scoring (gRPC/REST)
+Auth --> CC : <<HTTP>> Card verify
+Search --> ExtLLM : <<HTTP>> Keyword extraction
+Search --> AIService : <<HTTP>> LLM analysis
+HelperSvc --> Broker : <<RabbitMQ>> publish tasks
 
-HelperSvc --> Broker : publish tasks.submitted/tasks.confirmed
-Search --> Broker : publish preferences
-BranchOwner --> Broker : publish branch.info.created
-Access --> Broker : publish access_attempt
-Monitor --> Broker : publish faults/heartbeat
+HelperSvc --> Broker : <<RabbitMQ>> tasks.submitted/confirmed
+Search --> Broker : <<RabbitMQ>> publish preferences
+BranchOwner --> Broker : <<RabbitMQ>> branch.info.created
+Access --> Broker : <<RabbitMQ>> access_attempt
+Monitor --> Broker : <<RabbitMQ>> faults/heartbeat
 
-Broker --> HelperSvc : tasks.* subscriptions
-Broker --> Search : preferences updates
-Broker --> BranchOwner : branch events
-Broker --> PanDoku : model feedback/events
-Broker --> Notify : faults topic
+Broker --> HelperSvc : <<RabbitMQ>> tasks.* subscriptions
+Broker --> Search : <<RabbitMQ>> preferences updates
+Broker --> BranchOwner : <<RabbitMQ>> branch events
+Broker --> Notify : <<RabbitMQ>> faults topic
 
-Notify --> PushGW : push alert
-PushGW --> Ops : Pager/Push
+Notify --> PushGW : <<HTTP>> push alert
+PushGW --> Ops : <<HTTPS>> Pager/Push
 
-Equipment --> Access : face vectors
-Access --> Equipment : gate control
-Equipment --> Monitor : heartbeat/status
+Equipment --> Access : <<Local>> face vectors
+Access --> Equipment : <<Local>> gate control
+Equipment --> Monitor : <<TCP>> heartbeat/status
 
-Access --> FaceModel : IFaceModelService
-PanDoku --> FaceModel : Deploy models
+Access --> PanDoku : <<IPC>> generateVector()
+Access --> FaceModel : <<IPC>> IFaceModelService
+FaceModel --> PanDoku : <<IPC>> deployModel(), trainModel()
+Search --> PanDoku : <<Local>> analyzeQuery()
+AIService --> PanDoku : <<Local>> analyzeQuery()
+Monitor --> PanDoku : <<Local>> monitorModel(), getModelStatus()
 
 @enduml

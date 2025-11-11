@@ -66,6 +66,7 @@ package "System Interface Layer" {
   ' 시스템 인터페이스
   interface IModelDataRepository
   interface ITrainingDataRepository
+  interface IPanDokuModelService [Internal ML Engine]
   interface IMessagePublisherService
   interface IMessageSubscriptionService
   interface IFaceModelClient
@@ -93,31 +94,34 @@ package "System Interface Layer" {
   IAuthRepository -- AuthRepositoryAdapter
   IHelperRepository -- HelperRepositoryAdapter
   
-  ModelDataRepositoryImpl ..( ModelDatabase
-  TrainingDataRepositoryImpl ..( TrainingDataStore
+  ModelDataRepositoryImpl ..( ModelDatabase : <<JDBC>>
+  TrainingDataRepositoryImpl ..( TrainingDataStore : <<JDBC>>
 }
 
 ' 패키지 외부 연결
 ' Interface Layer -> Business Layer
-TrainingTriggerApiImpl ..( ITrainingTriggerService
-ModelDeploymentApiImpl ..( IModelDeploymentService
+TrainingTriggerApiImpl ..( ITrainingTriggerService : <<HTTP>>
+ModelDeploymentApiImpl ..( IModelDeploymentService : <<HTTP>>
 
 ' Business Layer -> System Interface Layer
-DataCollector ..( IAuthRepository : <<read-only>>
-DataCollector ..( IHelperRepository : <<read-only>>
-DataManagementService ..( IModelDataRepository : <<persist>>
-DataManagementService ..( ITrainingDataRepository : <<persist>>
-DeploymentService ..( IModelDataRepository : <<read>>
-DeploymentService ..( IFaceModelClient : <<use>>
+DataCollector ..( IAuthRepository : <<JDBC>>
+DataCollector ..( IHelperRepository : <<JDBC>>
+DataManagementService ..( IModelDataRepository : <<JDBC>>
+DataManagementService ..( ITrainingDataRepository : <<JDBC>>
+DeploymentService ..( IModelDataRepository : <<JDBC>>
+DeploymentService ..( IPanDokuModelService : <<Local>>
+DeploymentService ..( IPanDokuModelService : <<Local>>
+DeploymentService ..( IPanDokuModelService : <<Local>>
+DeploymentService ..( IFaceModelClient : <<gRPC>>
 
 ' Message Broker 연결
-TrainingPipelineOrchestrator ..( IMessagePublisherService : <<publish>>
-DeploymentService ..( IMessagePublisherService : <<publish>>
-ModelVerificationService ..( IMessagePublisherService : <<publish>>
-TrainingManager ..( IMessageSubscriptionService : <<subscribe>>
+TrainingPipelineOrchestrator ..( IMessagePublisherService : <<RabbitMQ>>
+DeploymentService ..( IMessagePublisherService : <<RabbitMQ>>
+ModelVerificationService ..( IMessagePublisherService : <<RabbitMQ>>
+TrainingManager ..( IMessageSubscriptionService : <<RabbitMQ>>
 
 ' Event Handler 연결
-MessageBrokerComponent ..( ITrainingEventHandler : <<IDomainEvent>>
-MessageBrokerComponent ..( IDeploymentEventHandler : <<IDomainEvent>>
+MessageBrokerComponent ..( ITrainingEventHandler : <<RabbitMQ>>
+MessageBrokerComponent ..( IDeploymentEventHandler : <<RabbitMQ>>
 
 @enduml

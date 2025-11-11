@@ -49,11 +49,25 @@ public class AIPanDokuConsumer {
         }
 
         try {
-            String aiResult = panDokuModelService.requestPanDoku(submittedEvent.getImageUrl());
+            // Use generateVector to process face image and extract features
+            // (Note: In production, imageUrl would be downloaded to get byte array)
+            byte[] imageData = downloadImage(submittedEvent.getImageUrl());
+            double[] vectorResult = panDokuModelService.generateVector(imageData);
+            String aiResult = formatVector(vectorResult);
             helperRepository.updateTaskStatus(submittedEvent.getTaskId(), aiResult, null);
         } catch (Exception ex) {
             // The message broker can retry delivery based on the thrown exception.
             throw new IllegalStateException("Failed to process task " + submittedEvent.getTaskId(), ex);
         }
+    }
+    
+    private byte[] downloadImage(String imageUrl) {
+        // TODO: Implement image download logic
+        return new byte[0];
+    }
+    
+    private String formatVector(double[] vector) {
+        // TODO: Format vector for storage
+        return "";
     }
 }

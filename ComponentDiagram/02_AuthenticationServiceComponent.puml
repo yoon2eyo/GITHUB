@@ -31,8 +31,8 @@ package "Business Layer" {
   IAuthEventConsumer -- AuthEventConsumer
   
   ' Business layer internal relationships
-  AuthenticationManager ..( IAuthorizationService : <<use>>
-  UserRegistrationManager ..( IAuthenticationService : <<use>>
+  AuthenticationManager ..( IAuthorizationService : <<Local>>
+  UserRegistrationManager ..( IAuthenticationService : <<Local>>
 }
 
 package "System Interface Layer" {
@@ -56,28 +56,28 @@ package "System Interface Layer" {
   ICreditCardVerificationService -- CreditCardVerificationClient
   
   ' System dependencies
-  AuthRepositoryImpl ..( AuthDatabase
-  MessageBrokerComponent ..( IAuthEventConsumer : <<IDomainEvent>>
+  AuthRepositoryImpl ..( AuthDatabase : <<JDBC>>
+  MessageBrokerComponent ..( IAuthEventConsumer : <<RabbitMQ>>
 }
 
 ' 패키지 외부 연결
 ' Interface Layer -> Business Layer
-AuthServiceApiImpl ..( IAuthenticationService : <<use>>
-AuthServiceApiImpl ..( IAuthorizationService : <<use>>
-AuthManagementApiImpl ..( IUserRegistrationService : <<use>>
+AuthServiceApiImpl ..( IAuthenticationService : <<HTTP>>
+AuthServiceApiImpl ..( IAuthorizationService : <<HTTP>>
+AuthManagementApiImpl ..( IUserRegistrationService : <<HTTP>>
 
 ' Business Layer -> Message Broker 연결
-AuthenticationManager ..( IMessagePublisherService : <<publish>>
-AuthorizationManager ..( IMessagePublisherService : <<publish>>
-UserRegistrationManager ..( IMessagePublisherService : <<publish>>
-AuthEventConsumer ..( IMessageSubscriptionService : <<subscribe>>
+AuthenticationManager ..( IMessagePublisherService : <<RabbitMQ>>
+AuthorizationManager ..( IMessagePublisherService : <<RabbitMQ>>
+UserRegistrationManager ..( IMessagePublisherService : <<RabbitMQ>>
+AuthEventConsumer ..( IMessageSubscriptionService : <<RabbitMQ>>
 
 ' Business Layer -> System Interface Layer
-AuthenticationManager ..( IAuthRepository : <<persist>>
-AuthenticationManager ..( ITokenService : <<use>>
+AuthenticationManager ..( IAuthRepository : <<JDBC>>
+AuthenticationManager ..( ITokenService : <<Local>>
 AuthenticationManager ..( ICreditCardVerificationService : <<HTTP>>
-AuthorizationManager ..( IAuthRepository : <<persist>>
-UserRegistrationManager ..( IAuthRepository : <<persist>>
+AuthorizationManager ..( IAuthRepository : <<JDBC>>
+UserRegistrationManager ..( IAuthRepository : <<JDBC>>
 AuthEventConsumer ..( IAuthRepository : <<persist>>
 
 legend right
