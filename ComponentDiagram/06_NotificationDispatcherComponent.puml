@@ -1,0 +1,52 @@
+@startuml NotificationDispatcherComponent
+' NotificationDispatcher_component.puml (가이드 준수)
+
+package "Interface Layer" {
+  interface INotificationApi
+  component NotificationApiImpl
+  INotificationApi -- NotificationApiImpl
+}
+
+package "Business Layer" {
+  interface INotificationDispatcherService
+  interface INotificationEventConsumer
+  
+  component NotificationDispatcherManager
+  component NotificationDispatcherConsumer
+  
+  ' Service implementations
+  INotificationDispatcherService -- NotificationDispatcherManager
+  INotificationEventConsumer -- NotificationDispatcherConsumer
+}
+
+package "System Interface Layer" {
+  interface IPushNotificationGateway
+  interface IMessageSubscriptionService
+  interface IMessagePublisherService
+  
+  component PushNotificationGatewayImpl
+  component MessageBrokerComponent
+  
+  ' System interface implementations
+  IPushNotificationGateway -- PushNotificationGatewayImpl
+  IMessageSubscriptionService -- MessageBrokerComponent
+  IMessagePublisherService -- MessageBrokerComponent
+}
+
+' 패키지 외부 연결
+' Interface Layer -> Business Layer
+NotificationApiImpl ..( INotificationDispatcherService : <<use>>
+
+' Business Layer -> System Interface Layer
+NotificationDispatcherManager ..( IPushNotificationGateway : <<use>>
+NotificationDispatcherConsumer ..( IPushNotificationGateway : <<use>>
+NotificationDispatcherConsumer ..( IMessageSubscriptionService : <<subscribe>>
+
+legend right
+  Notification Dispatcher structure
+  - Subscribes to domain events via Message Broker
+  - Dispatches notifications via push gateway
+  - Asynchronous event-driven notification delivery
+end legend
+
+@enduml

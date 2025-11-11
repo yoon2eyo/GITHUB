@@ -1,0 +1,76 @@
+@startuml
+' RealTimeAccessService_component.puml (가이드 준수)
+
+package "Interface Layer" {
+  interface IAccessControlApi
+  interface IFaceVerificationApi
+  
+  component AccessControlApiImpl
+  component FaceVerificationApiImpl
+  
+  IAccessControlApi -- AccessControlApiImpl
+  IFaceVerificationApi -- FaceVerificationApiImpl
+}
+
+package "Business Layer" {
+  interface IAccessVerificationService
+  interface IFaceModelService
+  interface IFaceVerificationService
+  
+  component AccessVerificationManager
+  component FaceModelManager
+  component AccessEventProcessor
+  component FaceModelProcessor
+  
+  ' Service implementations
+  IAccessVerificationService -- AccessVerificationManager
+  IFaceModelService -- FaceModelManager
+  IFaceVerificationService -- FaceModelManager
+  
+  ' Business layer internal relationships
+  AccessVerificationManager ..( IFaceVerificationService : <<use>>
+  AccessEventProcessor ..( IAccessVerificationService : <<use>>
+  FaceModelProcessor ..( IFaceModelService : <<use>>
+}
+
+package "System Interface Layer" {
+  interface IAccessRepository
+  interface IFaceModelRepository
+  interface IMessagePublisherService
+  interface IMessageSubscriptionService
+  interface IMLOpsService
+  
+  component AccessRepositoryImpl
+  component FaceModelRepositoryImpl
+  component MessageBrokerComponent
+  component MLOpsServiceAdapter
+  database AccessDatabase
+  database FaceModelDatabase
+  
+  IAccessRepository -- AccessRepositoryImpl
+  IFaceModelRepository -- FaceModelRepositoryImpl
+  IMessagePublisherService -- MessageBrokerComponent
+  IMessageSubscriptionService -- MessageBrokerComponent
+  IMLOpsService -- MLOpsServiceAdapter
+  
+  AccessRepositoryImpl ..( AccessDatabase : <<JDBC>>
+  FaceModelRepositoryImpl ..( FaceModelDatabase : <<JDBC>>
+}
+
+' 패키지 외부 연결
+' Interface Layer -> Business Layer
+AccessControlApiImpl ..( IAccessVerificationService : <<use>>
+FaceVerificationApiImpl ..( IFaceModelService : <<use>>
+
+' Business Layer -> System Interface Layer
+AccessVerificationManager ..( IAccessRepository : <<persist>>
+AccessVerificationManager ..( IMessagePublisherService : <<publish>>
+FaceModelManager ..( IFaceModelRepository : <<persist>>
+FaceModelManager ..( IMLOpsService : <<use>>
+FaceModelManager ..( IMessagePublisherService : <<publish>>
+
+' Event Consumers -> Message Subscription
+AccessEventProcessor ..( IMessageSubscriptionService : <<subscribe>>
+FaceModelProcessor ..( IMessageSubscriptionService : <<subscribe>>
+
+@enduml

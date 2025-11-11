@@ -1,0 +1,91 @@
+@startuml
+' GatewayComponent.puml (가이드 준수)
+
+package "Interface Layer" {
+  interface IApiGatewayEntry
+  interface IApiGatewayManagement
+
+  component ApiGatewayApiImpl
+  component GatewayManagementApiImpl
+  
+  IApiGatewayEntry -- ApiGatewayApiImpl
+  IApiGatewayManagement -- GatewayManagementApiImpl
+}
+
+package "Business Layer" {
+  interface IRequestRoutingService
+  interface ISecurityService
+  interface IServiceDiscoveryService
+  interface ILoadBalancingService
+  
+  component RequestRouter
+  component SecurityManager
+  component ServiceDiscoveryManager
+  component LoadBalancer
+  
+  interface IAuthenticationService
+  interface IAuthorizationService
+  interface IRequestSignatureVerifier
+  
+  component AuthenticationManager
+  component AuthorizationManager
+  component RequestSignatureVerifier
+  
+  ' Service implementations
+  IRequestRoutingService -- RequestRouter
+  ISecurityService -- SecurityManager
+  IServiceDiscoveryService -- ServiceDiscoveryManager
+  ILoadBalancingService -- LoadBalancer
+  
+  IAuthenticationService -- AuthenticationManager
+  IAuthorizationService -- AuthorizationManager
+  IRequestSignatureVerifier -- RequestSignatureVerifier
+  
+  ' Business layer internal relationships
+  RequestRouter ..( ISecurityService
+  RequestRouter ..( IServiceDiscoveryService
+  RequestRouter ..( ILoadBalancingService
+  
+  SecurityManager ..( IAuthenticationService
+  SecurityManager ..( IAuthorizationService
+  SecurityManager ..( IRequestSignatureVerifier
+}
+
+package "System Interface Layer" {
+  interface IServiceRegistry
+  interface IAuthenticationClient
+  interface IAuthorizationClient
+  interface IMessagePublisherService
+  interface ICircuitBreaker
+  interface IRateLimiter
+  
+  component ServiceRegistryImpl
+  component AuthenticationClientAdapter
+  component AuthorizationClientAdapter
+  component MessageBrokerComponent
+  component CircuitBreakerImpl
+  component RateLimiterImpl
+  
+  IServiceRegistry -- ServiceRegistryImpl
+  IAuthenticationClient -- AuthenticationClientAdapter
+  IAuthorizationClient -- AuthorizationClientAdapter
+  IMessagePublisherService -- MessageBrokerComponent
+  ICircuitBreaker -- CircuitBreakerImpl
+  IRateLimiter -- RateLimiterImpl
+}
+
+' 패키지 외부 연결
+' Interface Layer -> Business Layer
+ApiGatewayApiImpl ..( IRequestRoutingService : <<use>>
+GatewayManagementApiImpl ..( IServiceDiscoveryService : <<use>>
+
+' Business Layer -> System Interface Layer
+ServiceDiscoveryManager ..( IServiceRegistry : <<use>>
+LoadBalancer ..( ICircuitBreaker : <<use>>
+LoadBalancer ..( IRateLimiter : <<use>>
+AuthenticationManager ..( IAuthenticationClient : <<HTTP>>
+AuthorizationManager ..( IAuthorizationClient : <<HTTP>>
+RequestRouter ..( IMessagePublisherService : <<publish>>
+SecurityManager ..( IMessagePublisherService : <<publish>>
+
+@enduml

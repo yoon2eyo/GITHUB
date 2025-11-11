@@ -1,0 +1,81 @@
+@startuml BranchContentServiceComponent
+' BranchContentService_component.puml (가이드 준수)
+
+package "Interface Layer" {
+  interface IBranchContentServiceApi
+  component BranchContentServiceApiImpl
+  IBranchContentServiceApi -- BranchContentServiceApiImpl
+}
+
+package "Business Layer" {
+  interface IContentAnalysisService
+  interface IPreferenceMatchService
+  interface IKeywordExtractionService
+  interface IPreferenceEventConsumer
+  
+  component BranchContentService
+  component LlmKeywordExtractionManager
+  component PreferenceMatchManager
+  component ContentAnalysisManager
+  component PreferenceMatchScheduler
+  component PreferenceMatchConsumer
+  component BranchPreferenceIndex
+  
+  ' Service implementations
+  IContentAnalysisService -- ContentAnalysisManager
+  IPreferenceMatchService -- PreferenceMatchManager
+  IKeywordExtractionService -- LlmKeywordExtractionManager
+  IPreferenceEventConsumer -- PreferenceMatchConsumer
+
+  ' BranchContentService relationships
+  BranchContentService ..( IContentAnalysisService : <<use>>
+  BranchContentService ..( IPreferenceMatchService : <<use>>
+  IBranchContentServiceApi -- BranchContentService
+  
+  ' Business layer internal relationships
+  PreferenceMatchManager -- BranchPreferenceIndex
+  PreferenceMatchScheduler ..( IPreferenceMatchService : <<use>>
+  ContentAnalysisManager ..( IPreferenceMatchService : <<use>>
+  
+  ' LLM Keyword Extraction relationships
+  ContentAnalysisManager ..( IKeywordExtractionService : <<use>>
+  LlmKeywordExtractionManager ..( IContentAnalysisService : <<notify>>
+}
+package "System Interface Layer" {
+  interface ISearchRepository
+  interface ILLMAnalysisServiceApi
+  interface IMessagePublisherService
+  interface IMessageSubscriptionService
+  
+  component SearchRepositoryImpl
+  component LLMAnalysisServiceClient
+  component MessageBrokerComponent
+  database SearchDatabase
+  
+  ' System interface implementations
+  ISearchRepository -- SearchRepositoryImpl
+  ILLMAnalysisServiceApi -- LLMAnalysisServiceClient
+  IMessagePublisherService -- MessageBrokerComponent
+  IMessageSubscriptionService -- MessageBrokerComponent
+  
+  ' System dependencies
+  SearchRepositoryImpl ..( SearchDatabase
+  MessageBrokerComponent ..( IPreferenceEventConsumer : <<IDomainEvent>>
+}
+
+' 패키지 외부 연결
+' Interface Layer -> Business Layer
+BranchContentServiceApiImpl ..( IBranchContentServiceApi : <<use>>
+
+' Business Layer -> Message Broker 연결
+ContentAnalysisManager ..( IMessagePublisherService : <<publish>>
+PreferenceMatchManager ..( IMessagePublisherService : <<publish>>
+PreferenceMatchConsumer ..( IMessageSubscriptionService : <<subscribe>>
+
+' Business Layer -> System Interface Layer
+LlmKeywordExtractionManager ..( ILLMAnalysisServiceApi : <<HTTP>>
+ContentAnalysisManager ..( ISearchRepository : <<persist>>
+PreferenceMatchManager ..( ISearchRepository : <<persist>>
+PreferenceMatchConsumer ..( ISearchRepository : <<persist>>
+
+@enduml

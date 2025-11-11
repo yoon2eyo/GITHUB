@@ -1,0 +1,75 @@
+@startuml
+' FaceModelServiceComponent.puml (가이드 준수)
+
+package "Interface Layer" {
+  interface IFaceModelApi
+  interface IModelTrainingApi
+
+  component FaceModelApiImpl
+  component ModelTrainingApiImpl
+  
+  IFaceModelApi -- FaceModelApiImpl
+  IModelTrainingApi -- ModelTrainingApiImpl
+}
+
+package "Business Layer" {
+  interface IFaceModelManagerService
+  interface IModelTrainingService
+  interface IModelValidationService
+  interface IModelStorageService
+  
+  component FaceModelManager
+  component ModelTrainer
+  component ModelValidator
+  component ModelDistributor
+  
+  ' Service implementations
+  IFaceModelManagerService -- FaceModelManager
+  IModelTrainingService -- ModelTrainer
+  IModelValidationService -- ModelValidator
+  IModelStorageService -- ModelDistributor
+
+  ' Business layer internal relationships
+  FaceModelManager ..( IModelTrainingService
+  FaceModelManager ..( IModelValidationService
+  FaceModelManager ..( IModelStorageService
+  ModelTrainer ..( IModelValidationService
+}
+
+package "System Interface Layer" {
+  interface IModelRepository
+  interface ITrainingDataRepository
+  interface IMessagePublisherService
+  interface IMLOpsService
+  
+  component ModelRepositoryImpl
+  component TrainingDataRepositoryImpl
+  component MessageBrokerComponent
+  component MLOpsServiceAdapter
+  
+  database ModelDatabase
+  database TrainingDataStore
+  
+  IModelRepository -- ModelRepositoryImpl
+  ITrainingDataRepository -- TrainingDataRepositoryImpl
+  IMessagePublisherService -- MessageBrokerComponent
+  IMLOpsService -- MLOpsServiceAdapter
+  
+  ModelRepositoryImpl ..( ModelDatabase : <<JDBC>>
+  TrainingDataRepositoryImpl ..( TrainingDataStore : <<JDBC>>
+}
+
+' 패키지 외부 연결
+' Interface Layer -> Business Layer
+FaceModelApiImpl ..( IFaceModelManagerService : <<use>>
+ModelTrainingApiImpl ..( IModelTrainingService : <<use>>
+
+' Business Layer -> System Interface Layer
+ModelDistributor ..( IModelRepository : <<persist>>
+ModelTrainer ..( ITrainingDataRepository : <<persist>>
+ModelTrainer ..( IMLOpsService : <<use>>
+FaceModelManager ..( IMessagePublisherService : <<publish>>
+ModelTrainer ..( IMessagePublisherService : <<publish>>
+ModelValidator ..( IMessagePublisherService : <<publish>>
+
+@enduml

@@ -1,0 +1,70 @@
+@startuml BranchOwnerServiceComponent
+' BranchOwnerServiceComponent.puml (가이드 준수)
+' UC-03: 지점주 계정 등록, UC-18: 지점 정보 등록, UC-19: 고객 리뷰 조회
+
+package "Interface Layer" {
+  interface IBranchOwnerApi
+  interface IBranchQueryApi
+
+  component BranchOwnerApiImpl
+  component BranchQueryApiImpl
+  
+  IBranchOwnerApi -- BranchOwnerApiImpl
+  IBranchQueryApi -- BranchQueryApiImpl
+}
+
+package "Business Layer" {
+  interface IBranchOwnerManagementService
+  interface IBranchInfoService
+  interface IBranchEventConsumer
+  
+  component BranchOwnerManager
+  component BranchInfoValidator
+  component BranchEventProcessor
+  
+  ' Service implementations
+  IBranchOwnerManagementService -- BranchOwnerManager
+  IBranchInfoService -- BranchInfoValidator
+  IBranchEventConsumer -- BranchEventProcessor
+  
+  ' Business layer internal relationships
+  BranchOwnerManager ..( IBranchInfoService : <<use>>
+  BranchEventProcessor ..( IBranchOwnerManagementService : <<use>>
+}
+
+package "System Interface Layer" {
+  interface IBranchRepository
+  interface IAuthRepository
+  interface IMessagePublisherService
+  interface IMessageSubscriptionService
+  
+  component BranchRepositoryImpl
+  component AuthRepositoryImpl
+  component MessageBrokerComponent
+  
+  database BranchDatabase
+  database AuthDatabase
+  
+  IBranchRepository -- BranchRepositoryImpl
+  IAuthRepository -- AuthRepositoryImpl
+  IMessagePublisherService -- MessageBrokerComponent
+  IMessageSubscriptionService -- MessageBrokerComponent
+  
+  BranchRepositoryImpl ..( BranchDatabase : <<JDBC>>
+  AuthRepositoryImpl ..( AuthDatabase : <<JDBC>>
+}
+
+' 패키지 외부 연결
+' Interface Layer -> Business Layer
+BranchOwnerApiImpl ..( IBranchOwnerManagementService : <<use>>
+BranchQueryApiImpl ..( IBranchInfoService : <<use>>
+
+' Business Layer -> System Interface Layer
+BranchOwnerManager ..( IBranchRepository : <<persist>>
+BranchOwnerManager ..( IAuthRepository : <<query>>
+BranchOwnerManager ..( IMessagePublisherService : <<publish>>
+BranchInfoValidator ..( IBranchRepository : <<query>>
+BranchEventProcessor ..( IBranchRepository : <<persist>>
+BranchEventProcessor ..( IMessageSubscriptionService : <<subscribe>>
+
+@enduml

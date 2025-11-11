@@ -1,0 +1,69 @@
+@startuml RealTimeAccessServiceComponent
+' RealTimeAccessService_component.puml (가이드 준수)
+
+package "Interface Layer" {
+  interface IAccessControlApi
+  interface IFaceVerificationApi
+  
+  component AccessControlApiImpl
+  component FaceVerificationApiImpl
+  
+  IAccessControlApi -- AccessControlApiImpl
+  IFaceVerificationApi -- FaceVerificationApiImpl
+}
+
+package "Business Layer" {
+  interface IAccessVerificationService
+  interface IFaceVerificationService
+  
+  component AccessVerificationManager
+  component AccessEventProcessor
+  
+  ' Service implementations
+  IAccessVerificationService -- AccessVerificationManager
+  IFaceVerificationService -- AccessVerificationManager
+  
+  ' Business layer internal relationships
+  AccessVerificationManager ..( IFaceVerificationService : <<use>>
+  AccessEventProcessor ..( IAccessVerificationService : <<use>>
+}
+
+package "System Interface Layer" {
+  interface IAccessRepository
+  interface IFaceModelServiceApi
+  interface IMessagePublisherService
+  interface IMessageSubscriptionService
+  
+  component AccessRepositoryImpl
+  component MessageBrokerComponent
+  component FaceModelServiceAdapter
+  database AccessDatabase
+  
+  IAccessRepository -- AccessRepositoryImpl
+  IMessagePublisherService -- MessageBrokerComponent
+  IMessageSubscriptionService -- MessageBrokerComponent
+  IFaceModelServiceApi -- FaceModelServiceAdapter
+  
+  AccessRepositoryImpl ..( AccessDatabase : <<JDBC>>
+}
+
+' 패키지 외부 연결
+' Interface Layer -> Business Layer
+AccessControlApiImpl ..( IAccessVerificationService : <<use>>
+FaceVerificationApiImpl ..( IFaceModelService : <<use>>
+
+' Business Layer -> System Interface Layer
+AccessVerificationManager ..( IAccessRepository : <<persist>>
+AccessVerificationManager ..( IMessagePublisherService : <<publish>>
+AccessVerificationManager ..( IFaceModelServiceApi : <<use>> 
+
+' Event Consumers -> Message Subscription
+AccessEventProcessor ..( IMessageSubscriptionService : <<subscribe>>
+
+note right of FaceModelServiceAdapter
+  External service adapter
+  Calls IFaceModelServiceApi
+  from FaceModelService
+end note
+
+@enduml

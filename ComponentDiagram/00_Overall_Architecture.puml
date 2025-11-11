@@ -1,0 +1,79 @@
+@startuml OverallComponentDiagram
+!pragma layout smetana
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
+skinparam backgroundColor transparent
+
+actor "Customer App" as Customer
+actor "Helper App" as Helper
+actor "Branch Manager App" as Manager
+actor "Operations Center" as Ops
+
+cloud "External Partners" {
+  component "ICreditCardVerificationService" as CC
+  component "ILLMAnalysisService" as ExtLLM
+  component "IPanDokuModelService" as PanDoku
+}
+
+node "Branch Equipment & Cameras" as Equipment
+component "IPushNotificationGateway" as PushGW
+
+rectangle "Smart Fitness Cloud" {
+  component "RequestRouter" as Gateway
+  queue "MessageBrokerComponent" as Broker
+
+  package "Core Services" {
+    component "AuthenticationManager" as Auth
+    component "BranchContentService" as Search
+    component "TaskManagementManager" as HelperSvc
+    component "BranchOwnerManager" as BranchOwner
+    component "AccessAuthorizationManager" as Access
+    component "StatusReceiverManager" as Monitor
+    component "NotificationDispatcherConsumer" as Notify
+    component "LLMKeywordExtractor" as AIService
+  }
+
+  package "AI & ML Services" {
+    component "FaceModelServiceComponent" as FaceModel
+  }
+}
+
+Customer --> Gateway : HTTPS /auth,/search
+Helper --> Gateway : HTTPS /helper
+Manager --> Gateway : HTTPS /branch
+Ops --> Gateway : HTTPS /ops console
+
+Gateway --> Auth
+Gateway --> Search
+Gateway --> HelperSvc
+Gateway --> BranchOwner
+Gateway --> Access
+
+Auth --> CC : Card verify
+Search --> ExtLLM : Keyword extraction
+Search --> AIService : LLM analysis
+HelperSvc --> PanDoku : Task scoring (gRPC/REST)
+
+HelperSvc --> Broker : publish tasks.submitted/tasks.confirmed
+Search --> Broker : publish preferences
+BranchOwner --> Broker : publish branch.info.created
+Access --> Broker : publish access_attempt
+Monitor --> Broker : publish faults/heartbeat
+
+Broker --> HelperSvc : tasks.* subscriptions
+Broker --> Search : preferences updates
+Broker --> BranchOwner : branch events
+Broker --> PanDoku : model feedback/events
+Broker --> Notify : faults topic
+
+Notify --> PushGW : push alert
+PushGW --> Ops : Pager/Push
+
+Equipment --> Access : face vectors
+Access --> Equipment : gate control
+Equipment --> Monitor : heartbeat/status
+
+Access --> FaceModel : IFaceModelService
+PanDoku --> FaceModel : Deploy models
+
+@enduml

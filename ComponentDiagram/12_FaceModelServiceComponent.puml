@@ -1,0 +1,123 @@
+@startuml FaceModelServiceComponent
+!pragma layout smetana
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
+skinparam backgroundColor transparent
+
+title Face Model Service Component Diagram
+
+actor "Real-Time Access Service" as AccessService
+actor "Other Services" as OtherServices
+database "Face Vector Store" as VectorDB
+database "Model Version Store" as ModelDB
+queue "Message Broker" as Broker
+
+rectangle "Face Model Service" {
+  package "Interface Layer" {
+    component "IFaceModelServiceApi" as ServiceApi
+    component "FaceModelServiceApiImpl" as ServiceApiImpl
+  }
+
+  package "Business Logic Layer" {
+    component "VectorComparisonEngine" as VectorEngine
+    component "ModelLifecycleManager" as ModelManager
+    component "FaceModelEventProcessor" as EventProcessor
+  }
+
+  package "Port Layer" {
+    component "IFaceModelRepository" as FaceRepo
+    component "IModelVersionRepository" as ModelRepo
+    component "IFaceModelEventHandler" as EventHandler
+    component "IFaceModelService" as CoreService
+    component "IModelManagementPort" as ManagementPort
+  }
+
+  package "System Interface Layer" {
+    component "FaceModelRepositoryImpl" as FaceRepoImpl
+    component "ModelVersionRepositoryImpl" as ModelRepoImpl
+  }
+
+  package "System Root" {
+    component "FaceModelServiceComponent" as Root
+  }
+}
+
+package "Model & Domain" {
+  component "FaceModelData" as FaceData
+  component "ModelVersion" as ModelVer
+  component "FaceVerificationResult" as VerResult
+}
+
+' Interface Layer Dependencies
+ServiceApi --> ServiceApiImpl : implements
+ServiceApiImpl --> VectorEngine : uses
+ServiceApiImpl --> ModelManager : uses
+
+' Business Logic Dependencies
+VectorEngine --> CoreService : implements
+ModelManager --> ManagementPort : implements
+EventProcessor --> EventHandler : implements
+
+' Port to System Interface
+FaceRepo --> FaceRepoImpl : implements
+ModelRepo --> ModelRepoImpl : implements
+
+' System Root Dependencies
+Root --> ServiceApiImpl : creates
+Root --> VectorEngine : creates
+Root --> ModelManager : creates
+Root --> EventProcessor : creates
+Root --> FaceRepoImpl : creates
+Root --> ModelRepoImpl : creates
+
+' Data Models
+ServiceApiImpl --> FaceData : uses
+ServiceApiImpl --> VerResult : returns
+ModelManager --> ModelVer : manages
+
+' External Communication
+AccessService --> ServiceApi : calls (face verification)
+OtherServices --> ServiceApi : calls (vector operations)
+
+' Data Persistence
+FaceRepoImpl --> VectorDB : reads/writes
+ModelRepoImpl --> ModelDB : reads/writes
+
+' Message Broker
+EventProcessor --> Broker : subscribes
+Broker --> EventProcessor : publishes events
+
+' Port Interfaces
+ServiceApiImpl --> FaceRepo : uses
+ServiceApiImpl --> ModelRepo : uses
+
+note right of ServiceApi
+  External API for face verification
+  - calculateSimilarityScore()
+  - verifyFace()
+  - registerFaceVector()
+  - getSavedFaceVectors()
+end note
+
+note right of VectorEngine
+  Core algorithm: Cosine similarity
+  - calculateSimilarityScore()
+  - createVerificationResult()
+  - isModelLoaded()
+end note
+
+note right of ModelManager
+  Model lifecycle management
+  - loadNewModel()
+  - rollbackToPreviousModel()
+  - getActiveModelVersion()
+  - getModelMetadata()
+end note
+
+note right of Root
+  Singleton DI Container
+  Manages component lifecycle
+  and dependency injection
+end note
+
+@enduml

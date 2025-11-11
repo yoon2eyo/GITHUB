@@ -1,0 +1,100 @@
+@startuml MessageBrokerComponent
+' MessageBroker_component.puml
+' Architecture: Hexagonal Architecture - Infrastructure Layer
+' Tactic: Message-Based Integration, Passive Redundancy
+' DD-04, DD-08: Event-Driven Integration between services
+
+package "Interface Layer" {
+  interface IMessagePublisherService
+  interface IMessageSubscriptionService
+}
+
+package "Business Layer" {
+  interface ITopicRegistry
+  component TopicRegistry
+  
+  interface IEventPublisher
+  component EventPublisher
+  
+  interface ISubscriptionManager
+  component SubscriptionManager
+  
+  interface IAsyncEventDispatcher
+  component AsyncEventDispatcher
+  
+  interface IDomainEvent
+  
+  component MessageBrokerCoordinator
+  
+  ITopicRegistry -- TopicRegistry
+  IEventPublisher -- EventPublisher
+  ISubscriptionManager -- SubscriptionManager
+  IAsyncEventDispatcher -- AsyncEventDispatcher
+  
+  IMessagePublisherService -- MessageBrokerCoordinator
+  IMessageSubscriptionService -- MessageBrokerCoordinator
+  
+  MessageBrokerCoordinator ..( ITopicRegistry
+  MessageBrokerCoordinator ..( IEventPublisher
+  MessageBrokerCoordinator ..( ISubscriptionManager
+  
+  EventPublisher ..( IAsyncEventDispatcher
+  EventPublisher ..( ITopicRegistry
+  
+  SubscriptionManager ..( ITopicRegistry
+  
+  AsyncEventDispatcher ..( IDomainEvent
+}
+
+package "System Interface Layer" {
+  interface IHelperEventConsumer
+  component HelperEventConsumerAdapter
+  component PreferenceMatchConsumer
+  component NotificationDispatcherConsumer
+  
+  interface IAuthRepository
+  component AuthRepositoryImpl
+  
+  interface IHelperRepository
+  component HelperRepositoryImpl
+  
+  interface ISearchRepository
+  component SearchRepositoryImpl
+  
+  interface IMonitorRepository
+  component MonitorRepositoryImpl
+  
+  interface IAccessVectorRepository
+  component AccessVectorRepositoryImpl
+  
+  database DB_AUTH
+  database DB_HELPER
+  database DB_SEARCH
+  database DB_MONITOR
+  database DB_ACCESS
+  
+  IAuthRepository -- AuthRepositoryImpl
+  IHelperRepository -- HelperRepositoryImpl
+  ISearchRepository -- SearchRepositoryImpl
+  IMonitorRepository -- MonitorRepositoryImpl
+  IAccessVectorRepository -- AccessVectorRepositoryImpl
+  
+  HelperEventConsumerAdapter ..( IMessageSubscriptionService : <<required>>
+  
+  AuthRepositoryImpl ..( DB_AUTH : <<JDBC>>
+  HelperRepositoryImpl ..( DB_HELPER : <<JDBC>>
+  SearchRepositoryImpl ..( DB_SEARCH : <<JDBC>>
+  MonitorRepositoryImpl ..( DB_MONITOR : <<JDBC>>
+  AccessVectorRepositoryImpl ..( DB_ACCESS : <<JDBC>>
+}
+
+' 패키지 외부 연결 (하단부에 작성)
+IMessageSubscriptionService -up-( MessageBrokerCoordinator : <<implements>>
+IHelperEventConsumer -up-( HelperEventConsumerAdapter : <<provided>>
+
+' AsyncEventDispatcher에서 컨슈머들로 IDomainEvent 전달
+AsyncEventDispatcher --> PreferenceMatchConsumer : IDomainEvent
+AsyncEventDispatcher --> NotificationDispatcherConsumer : IDomainEvent
+AsyncEventDispatcher --> HelperEventConsumerAdapter : IDomainEvent
+
+@enduml
