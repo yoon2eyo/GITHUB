@@ -119,12 +119,12 @@ JwtTokenManager           // 역할 명확: JWT 토큰 관리
 
 ---
 
-### **07_GatewayComponent.puml**
+### **07_ApiGatewayComponent.puml**
 
 | 기존 이름 | 새 이름 | 이유 |
 |-----------|---------|------|
-| `ApiGatewayApiImpl` | `GatewayController` | Gateway Entry Controller |
-| `GatewayManagementApiImpl` | `GatewayManagementController` | 관리 API Controller |
+| `ApiGatewayApiImpl` | `ApiGatewayController` | API Gateway Entry Controller |
+| `GatewayManagementApiImpl` | `ApiGatewayManagementController` | API Gateway 관리 API Controller |
 | `ServiceRegistryImpl` | `EurekaServiceRegistry` | Eureka 기술 명시 |
 | `CircuitBreakerImpl` | `ResilientCircuitBreaker` | Resilience4j 기술 명시 |
 | `RateLimiterImpl` | `ResilientRateLimiter` | Resilience4j 기술 명시 |
@@ -191,7 +191,7 @@ JwtTokenManager           // 역할 명확: JWT 토큰 관리
 3. [x] `04_HelperServiceComponent.puml` ✅
 4. [x] `05_MonitoringServiceComponent.puml` ✅
 5. [x] `06_NotificationDispatcherComponent.puml` ✅
-6. [x] `07_GatewayComponent.puml` ✅
+6. [x] `07_ApiGatewayComponent.puml` ✅
 7. [x] `09_BranchOwnerServiceComponent.puml` ✅
 8. [x] `10_RealTimeAccessServiceComponent.puml` ✅
 9. [x] `11_MLOpsServiceComponent.puml` ✅

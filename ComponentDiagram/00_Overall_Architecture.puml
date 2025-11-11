@@ -2,7 +2,6 @@
 !pragma layout smetana
 skinparam componentStyle rectangle
 skinparam packageStyle rectangle
-skinparam backgroundColor transparent
 
 actor "Customer App" as Customer
 actor "Helper App" as Helper
@@ -18,7 +17,7 @@ node "Branch Equipment & Cameras" as Equipment
 component "IPushNotificationGateway" as PushGW
 
 rectangle "Smart Fitness Cloud" {
-  component "RequestRouter (API Gateway)" as Gateway
+  component "RequestRouter (ApiGateway)" as ApiGateway
   queue "RabbitMQ (Message Broker)" as Broker
 
   package "Real-Time Access Layer" {
@@ -41,18 +40,18 @@ rectangle "Smart Fitness Cloud" {
   }
 }
 
-' Client → Gateway
-Customer --> Gateway : HTTPS /auth,/search
-Helper --> Gateway : HTTPS /helper
-Manager --> Gateway : HTTPS /branch
-Ops --> Gateway : HTTPS /ops console
+' Client → ApiGateway
+Customer --> ApiGateway : HTTPS /auth,/search
+Helper --> ApiGateway : HTTPS /helper
+Manager --> ApiGateway : HTTPS /branch
+Ops --> ApiGateway : HTTPS /ops console
 
-' Gateway → Services (Synchronous)
-Gateway --> Auth : <<HTTP>>
-Gateway --> Search : <<HTTP>>
-Gateway --> HelperSvc : <<HTTP>>
-Gateway --> BranchOwner : <<HTTP>>
-Gateway --> Access : <<HTTP>>
+' ApiGateway → Services (Synchronous)
+ApiGateway --> Auth : <<HTTP>>
+ApiGateway --> Search : <<HTTP>>
+ApiGateway --> HelperSvc : <<HTTP>>
+ApiGateway --> BranchOwner : <<HTTP>>
+ApiGateway --> Access : <<HTTP>>
 
 ' External System Integration
 Auth --> CC : <<HTTP>> Card verify

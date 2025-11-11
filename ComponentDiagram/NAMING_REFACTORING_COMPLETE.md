@@ -139,9 +139,9 @@ component ResilientRateLimiter
 - `NotificationApiImpl` → `NotificationController`
 - `PushNotificationGatewayImpl` → `FcmPushGateway`
 
-### **07_GatewayComponent.puml**
-- `ApiGatewayApiImpl` → `GatewayController`
-- `GatewayManagementApiImpl` → `GatewayManagementController`
+### **07_ApiGatewayComponent.puml**
+- `ApiGatewayApiImpl` → `ApiGatewayController`
+- `GatewayManagementApiImpl` → `ApiGatewayManagementController`
 - `ServiceRegistryImpl` → `EurekaServiceRegistry`
 - `CircuitBreakerImpl` → `ResilientCircuitBreaker`
 - `RateLimiterImpl` → `ResilientRateLimiter`

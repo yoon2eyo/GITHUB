@@ -288,7 +288,7 @@
 ### 미작성/미수정 컴포넌트:
 - [ ] `02_AuthenticationServiceComponent.puml` - 기존 구조 유지 (양호)
 - [ ] `06_NotificationDispatcherComponent.puml` - 기존 구조 유지 (양호)
-- [ ] `07_GatewayComponent.puml` - 기존 구조 유지 (양호)
+- [ ] `07_ApiGatewayComponent.puml` - API Gateway (Request Router) - 기존 구조 유지 (양호)
 - [ ] `08_AIServiceComponent.puml` - 제거 또는 역할 재정의 필요
 - [ ] `09_BranchOwnerServiceComponent.puml` - 기존 구조 유지 (양호)
 - [ ] `11_MLOpsServiceComponent.puml` - DD-03 READ-ONLY 명시 추가 필요
