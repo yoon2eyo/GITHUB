@@ -1,0 +1,89 @@
+@startuml UC13_AILaundryTaskAnalysis
+title UC-13: AI 세탁물 작업 1차 판독 (AI Laundry Task Analysis)
+autonumber
+skinparam defaultFontSize 18
+
+' Actors & External Systems
+participant "Helper\n(Mobile App)" as Helper
+queue "RabbitMQ Broker" as Broker
+database "S3 Storage" as S3Bucket
+
+' Helper Service Node
+box "Helper Service Node" #LightCyan
+  participant "RabbitMQAdapter\n<<System Interface>>" as HelperMQ
+  participant "AITaskAnalysisConsumer\n<<Business>>" as Consumer
+  participant "TaskAnalysisEngine\n<<Business>>" as Analyzer
+  participant "S3PhotoStorage\n<<System Interface>>" as PhotoStorage
+  participant "MLInferenceEngineAdapter\n<<System Interface>>" as MLAdapter
+  participant "HelperJpaRepository\n<<System Interface>>" as HelperRepo
+end box
+
+' AI Pipeline Node
+box "AI Pipeline Node" #LightYellow
+  participant "ML Inference Engine\n<<Service>>" as MLEngine
+end box
+
+database "Helper Database" as HelperDB
+
+== Main Success Scenario ==
+
+' Step 1: Trigger from UC-12 (Helper uploads photo)
+Helper -> Broker : TaskSubmittedEvent{taskId, photoKey}
+
+' Step 2: Event routing to Helper Service
+Broker -> HelperMQ : <<AMQP>> TaskSubmittedEvent
+HelperMQ -> Consumer : onMessage(event)
+
+' Step 3: Retrieve task information
+Consumer -> HelperRepo : findTaskForAnalysis(taskId)
+HelperRepo -> HelperDB : SELECT task_id, photo_key, helper_id FROM helper_tasks WHERE task_id = ?
+HelperDB --> HelperRepo : TaskEntity
+HelperRepo --> Consumer : TaskEntity
+
+' Step 4: Download photo from S3
+Consumer -> Analyzer : analyzeTaskPhoto(TaskEntity)
+Analyzer -> PhotoStorage : downloadPhoto(photoKey)
+PhotoStorage -> S3Bucket : <<S3 GET>> /tasks/{photoKey}
+S3Bucket --> PhotoStorage : BinaryImage
+PhotoStorage --> Analyzer : BinaryImage
+
+' Step 5: AI inference analysis
+Analyzer -> MLAdapter : inferLaundryQuality(BinaryImage, metadata)
+note right
+  **ML Inference Request:**
+  - Model: Laundry Quality Classifier (ResNet50)
+  - Input: 640x480 RGB image
+  - Threshold: 0.7 (양호/미흡), otherwise 불분명
+end note
+MLAdapter -> MLEngine : <<HTTP>> POST /api/v1/infer
+MLEngine --> MLAdapter : InferenceResult{양호: 0.85, 미흡: 0.12, 불분명: 0.03}
+MLAdapter --> Analyzer : InferenceResult
+
+' Step 6: Determine final result
+Analyzer -> Analyzer : determineLabel(scores)
+note right
+  **Result Determination:**
+  - 양호: if 양호_score >= 0.7
+  - 미흡: if 미흡_score >= 0.7
+  - 불분명: otherwise
+end note
+Analyzer --> Consumer : AnalysisResult{label: "양호", confidence: 0.85}
+
+' Step 7: Save analysis result to database
+Consumer -> HelperRepo : saveAnalysis(taskId, "양호", 0.85)
+HelperRepo -> HelperDB : UPDATE helper_tasks SET ai_result=?, ai_confidence=?, analyzed_at=NOW() WHERE task_id=?
+HelperDB --> HelperRepo : updated
+HelperRepo --> Consumer : updated
+
+' Step 8: Acknowledge message processing
+Consumer -> HelperMQ : acknowledge(event)
+HelperMQ --> Broker : <<AMQP>> ACK
+
+note over Helper, MLEngine
+  **QA Achievement:**
+  - **QAS-05 (Availability)**: Async event-driven processing, message durability
+  - **QAS-06 (Modifiability)**: ML adapter pattern for model interchangeability
+  - **Performance**: Average analysis time ~2-3 seconds
+end note
+
+@enduml

@@ -1,0 +1,202 @@
+@startuml ArtifactDefinition_BranchEquipment
+!pragma layout smetana
+skinparam componentStyle rectangle
+skinparam artifactStyle rectangle
+
+title Artifact Definition Diagram - Branch Equipment
+
+' ==================== BRANCH ZONE ====================
+cloud "Branch Zone\n(각 지점별)" {
+  
+  ' ============ BRANCH EQUIPMENT NODE ============
+  node "Branch Equipment Node\n[multiplicity: 1,000+]\n(각 지점당 1개)" as BranchNode <<device>> {
+    
+    ' ============ CAMERA CONTROLLER ============
+    artifact "camera-controller.py" as CameraScript <<artifact, python>> {
+      component "Camera Controller\n(Image Capture & Upload)" as CameraController
+    }
+    
+    artifact "camera-config.json" as CameraConfig <<artifact>>
+    artifact "api-endpoint.conf" as APIEndpoint <<artifact>>
+    
+    artifact "opencv-4.6.so" as OpenCV <<artifact, library>>
+    artifact "requests-2.28.py" as Requests <<artifact, library>>
+    artifact "pillow-10.0.py" as Pillow <<artifact, library>>
+    
+    CameraScript ..> CameraConfig : <<deploy>>
+    CameraScript ..> APIEndpoint : <<deploy>>
+    CameraScript --> OpenCV : <<dependency>>
+    CameraScript --> Requests : <<dependency>>
+    CameraScript --> Pillow : <<dependency>>
+    
+    note right of CameraScript
+      **QA: Performance (QAS-02)**
+      - Local image preprocessing
+        (1080p → 640x480 resize)
+      - JPEG compression (Quality 80)
+      - Image size reduction: 70%
+        (2MB → 600KB)
+      - Transmission time reduction
+      
+      **Functions:**
+      - Face detection (OpenCV Haar Cascade)
+      - Image resize & compression
+      - HTTPS upload to Access Service
+    end note
+    
+    ' ============ GATE CONTROLLER ============
+    artifact "gate-controller.cpp" as GateScript <<artifact, cpp>> {
+      component "Gate Controller\n(Real-time GPIO Control)" as GateController
+    }
+    
+    artifact "gate-config.json" as GateConfig <<artifact>>
+    artifact "flask-server.py" as FlaskServer <<artifact, python>>
+    
+    artifact "wiringpi-2.61.so" as WiringPi <<artifact, library>>
+    artifact "flask-2.3.py" as Flask <<artifact, library>>
+    
+    GateScript ..> GateConfig : <<deploy>>
+    FlaskServer ..> GateConfig : <<deploy>>
+    GateScript --> WiringPi : <<dependency>>
+    FlaskServer --> Flask : <<dependency>>
+    
+    GateScript ..> FlaskServer : <<local call>>
+    
+    note right of GateScript
+      **QA: Performance (QAS-02)**
+      - Real-time GPIO control (< 500ms)
+      - Relay signal to physical gate
+      - C++ for low-latency control
+      
+      **QA: Availability (QAS-01)**
+      - Watchdog timer (30s timeout)
+      - Auto-restart on failure
+      
+      **Functions:**
+      - HTTP server (Flask, port 443)
+      - Receive gate open command
+      - GPIO Relay control (5V signal)
+    end note
+    
+    ' ============ IOT SENSOR MANAGER ============
+    artifact "sensor-manager.py" as SensorScript <<artifact, python>> {
+      component "IoT Sensor Manager\n(Heartbeat & Status Report)" as SensorManager
+    }
+    
+    artifact "sensor-config.json" as SensorConfig <<artifact>>
+    artifact "local-buffer.db" as LocalBuffer <<artifact, sqlite>>
+    
+    artifact "socket-3.11.py" as Socket <<artifact, library>>
+    artifact "sqlite3-3.42.py" as SQLite <<artifact, library>>
+    
+    SensorScript ..> SensorConfig : <<deploy>>
+    SensorScript ..> LocalBuffer : <<deploy>>
+    SensorScript --> Socket : <<dependency>>
+    SensorScript --> SQLite : <<dependency>>
+    
+    note right of SensorScript
+      **QA: Availability (QAS-01)**
+      - Heartbeat every 10 minutes (TCP)
+      - Status report (temperature, errors)
+      - Local buffering on network failure
+      
+      **QA: Performance**
+      - SQLite local buffer (network outage)
+      - Retry mechanism (3 attempts)
+      
+      **Functions:**
+      - TCP Heartbeat to Monitor Service
+      - Temperature sensor reading
+      - Error status reporting
+      - Local SQLite buffer
+    end note
+    
+    ' ============ SYSTEMD SERVICE FILES ============
+    artifact "camera-controller.service" as CameraService <<artifact, systemd>>
+    artifact "gate-controller.service" as GateService <<artifact, systemd>>
+    artifact "sensor-manager.service" as SensorService <<artifact, systemd>>
+    
+    CameraService ..> CameraScript : <<manages>>
+    GateService ..> GateScript : <<manages>>
+    SensorService ..> SensorScript : <<manages>>
+    
+    note bottom of BranchNode
+      **Execution Environment:**
+      - OS: Embedded Linux (Raspberry Pi OS / Yocto)
+      - Kernel: Linux 5.15+ (RT Patch)
+      - Runtime: Python 3.10+, C++ (g++ 11.x)
+      
+      **Hardware:**
+      - CPU: ARM Cortex-A53 (4 cores, 1.4GHz)
+      - Memory: 2GB DDR3 RAM
+      - Storage: 16GB eMMC (local buffer)
+      - Network: Ethernet (100Mbps) / WiFi
+      - GPIO: 40-pin header (Relay control)
+      - Camera: 1080p HD Camera
+      
+      **QA: Availability (QAS-01)**
+      - Systemd auto-restart on failure
+      - Watchdog timer (30s timeout, auto-reboot)
+      - Local buffering (network outage)
+      
+      **QA: Performance (QAS-02)**
+      - Local preprocessing (70% size reduction)
+      - Real-time GPIO control (< 500ms)
+      
+      **QA: Cost**
+      - Embedded Linux (free, no license)
+      - Low-power hardware (< 10W)
+    end note
+  }
+}
+
+' ==================== EXTERNAL COMMUNICATION ====================
+CameraScript ..> "Access Service" : <<HTTPS (Face Photo Upload)>>
+FlaskServer ..> "Access Service" : <<HTTPS (Gate Control Response)>>
+SensorScript ..> "Monitoring Service" : <<TCP (Heartbeat)>>
+SensorScript ..> "Monitoring Service" : <<HTTPS (Ping/Echo Response)>>
+
+' ==================== LEGEND ====================
+legend bottom left
+  **Artifact Definition - Branch Equipment**
+  
+  **Artifact Types:**
+  • <<artifact, python>>: Python script (.py)
+  • <<artifact, cpp>>: C++ executable (.cpp)
+  • <<artifact, sqlite>>: SQLite database (.db)
+  • <<artifact, systemd>>: Systemd service file (.service)
+  • <<artifact, library>>: Native/Python library (.so, .py)
+  
+  **Branch Equipment Artifacts:**
+  • camera-controller.py (Image capture & upload)
+  • gate-controller.cpp (Real-time GPIO control)
+  • sensor-manager.py (Heartbeat & status report)
+  • flask-server.py (HTTP server for gate control)
+  • local-buffer.db (SQLite buffer for network outage)
+  
+  **Configuration Artifacts:**
+  • camera-config.json (Camera settings, resolution)
+  • gate-config.json (GPIO pin mapping, relay config)
+  • sensor-config.json (Heartbeat interval, Monitor endpoint)
+  • api-endpoint.conf (Access Service URL)
+  
+  **Key Libraries:**
+  • OpenCV 4.6 (Image preprocessing, face detection)
+  • WiringPi 2.61 (GPIO control)
+  • Flask 2.3 (HTTP server)
+  • Requests 2.28 (HTTPS client)
+  • SQLite 3.42 (Local buffer)
+  
+  **Systemd Services:**
+  • camera-controller.service (Auto-start, restart on failure)
+  • gate-controller.service (Auto-start, restart on failure)
+  • sensor-manager.service (Auto-start, restart on failure)
+  
+  **QA Considerations:**
+  • Performance: Local preprocessing (70% size reduction)
+  • Availability: Auto-restart, Watchdog, Local buffer
+  • Cost: Embedded Linux (free), Low-power hardware
+end legend
+
+@enduml
+

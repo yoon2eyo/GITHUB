@@ -1,0 +1,161 @@
+@startuml SmartFitnessSystemArchitecture
+!pragma layout smetana
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
+skinparam linetype ortho
+
+title Smart Fitness Management System - Overall Architecture (4-Layer Hybrid MSA)
+
+' ==================== ACTORS ====================
+actor "Customer App" as Customer #LightBlue
+actor "Helper App" as Helper #LightGreen
+actor "Manager App" as Manager #LightCoral
+actor "Ops Center" as Ops #LightGray
+
+' ==================== EXTERNAL SYSTEMS ====================
+cloud "External Partners" #LightYellow {
+  component "Credit Card\nVerification" as CC
+  component "LLM Service" as ExtLLM
+  component "FCM Push" as FCM
+}
+
+node "Branch Equipment" #WhiteSmoke {
+  component "Camera &\nGate & Sensors" as Equipment
+}
+
+' ==================== SMART FITNESS CLOUD ====================
+package "Smart Fitness Cloud Platform" #Azure {
+  
+  ' ============ INFRASTRUCTURE LAYER ============
+  rectangle "Infrastructure Layer" #Lavender {
+    component "API Gateway" as APIGateway
+  }
+  
+  ' ============ REAL-TIME ACCESS LAYER ============
+  package "Real-Time Access Layer\n(QAS-02: < 3초 출입)" #LightCyan {
+    component "Access Service" as AccessSvc
+    component "FaceModel Service" as FaceModelSvc
+    database "Vector DB" as VectorDB
+    
+    AccessSvc -down-> VectorDB : <<JDBC>>
+    AccessSvc -right-> FaceModelSvc : <<IPC/gRPC>>
+    FaceModelSvc -down-> VectorDB : <<JDBC>>
+  }
+  
+  ' ============ BUSINESS LOGIC LAYER ============
+  package "Business Logic Layer\n(QAS-03, 04, 05)" #LightGreen {
+    component "Auth Service" as AuthSvc
+    component "Helper Service" as HelperSvc
+    component "Search Service" as SearchSvc
+    component "BranchOwner Service" as BranchOwnerSvc
+    component "Monitoring Service" as MonitorSvc
+    component "Notification Service" as NotifySvc
+    
+    database "Auth DB" as AuthDB
+    database "Helper DB" as HelperDB
+    database "Search DB" as SearchDB
+    database "Branch DB" as BranchDB
+    database "Monitor DB" as MonitorDB
+    database "ElasticSearch" as ESCluster
+    
+    AuthSvc -down-> AuthDB : <<JDBC>>
+    HelperSvc -down-> HelperDB : <<JDBC>>
+    SearchSvc -down-> SearchDB : <<JDBC>>
+    SearchSvc -down-> ESCluster : <<ES API>>
+    BranchOwnerSvc -down-> BranchDB : <<JDBC>>
+    MonitorSvc -down-> MonitorDB : <<JDBC>>
+  }
+  
+  ' ============ AI PIPELINE LAYER ============
+  package "AI Pipeline Layer\n(QAS-06: Hot Swap)" #LightYellow {
+    component "MLOps Service" as MLOpsSvc
+    component "ML Inference Engine" as MLEngine
+    
+    database "Model DB" as ModelDB
+    database "Training Data" as TrainingDB
+    
+    MLOpsSvc -down-> ModelDB : <<JDBC>>
+    MLOpsSvc -down-> TrainingDB : <<JDBC>>
+    MLOpsSvc -right-> MLEngine : <<Local>>
+  }
+  
+  ' ============ PERSISTENCE LAYER ============
+  rectangle "Persistence Layer" #LightGray {
+    queue "RabbitMQ\nMessage Broker" as Broker
+  }
+}
+
+' ==================== CLIENT CONNECTIONS ====================
+Customer --> APIGateway : HTTPS
+Helper --> APIGateway : HTTPS
+Manager --> APIGateway : HTTPS
+Ops --> APIGateway : HTTPS
+
+' ==================== EQUIPMENT CONNECTIONS ====================
+Equipment --> AccessSvc : HTTPS (Photo)
+Equipment --> MonitorSvc : TCP (Heartbeat)
+AccessSvc --> Equipment : HTTPS (Gate)
+
+' ==================== API GATEWAY TO SERVICES ====================
+APIGateway --> AuthSvc : HTTP
+APIGateway --> AccessSvc : HTTP
+APIGateway --> HelperSvc : HTTP
+APIGateway --> SearchSvc : HTTP
+APIGateway --> BranchOwnerSvc : HTTP
+APIGateway --> MonitorSvc : HTTP
+APIGateway --> MLOpsSvc : HTTP
+
+' ==================== EXTERNAL INTEGRATIONS ====================
+AuthSvc --> CC : HTTPS
+SearchSvc --> ExtLLM : HTTPS (Cold Path)
+NotifySvc --> FCM : HTTPS
+FCM --> Manager : Push
+
+' ==================== MESSAGE BROKER CONNECTIONS ====================
+AuthSvc --> Broker : AMQP
+HelperSvc --> Broker : AMQP
+SearchSvc --> Broker : AMQP
+BranchOwnerSvc --> Broker : AMQP
+MonitorSvc --> Broker : AMQP
+AccessSvc --> Broker : AMQP
+FaceModelSvc --> Broker : AMQP
+MLOpsSvc --> Broker : AMQP
+
+Broker --> NotifySvc : AMQP
+Broker --> HelperSvc : AMQP
+Broker --> SearchSvc : AMQP
+Broker --> MLOpsSvc : AMQP
+
+' ==================== AI PIPELINE CONNECTIONS ====================
+FaceModelSvc --> MLEngine : Local
+MLOpsSvc --> HelperDB : JDBC\n(READ-ONLY)
+MLOpsSvc --> AuthDB : JDBC\n(READ-ONLY)
+MLOpsSvc --> FaceModelSvc : gRPC\n(Hot Swap)
+
+' ==================== LEGEND ====================
+legend bottom left
+  **4-Layer Hybrid MSA**
+  
+  **Layers:**
+  1. Infrastructure: API Gateway (Entry Point)
+  2. Real-Time Access: Access + FaceModel (< 3초)
+  3. Business Logic: 6 Services (Auth, Helper, Search, Branch, Monitor, Notify)
+  4. AI Pipeline: MLOps + ML Engine (Hot Swap)
+  
+  **Protocols:**
+  • HTTPS/HTTP: REST APIs
+  • IPC/gRPC: High-performance (same node)
+  • AMQP: Async messaging (RabbitMQ)
+  • JDBC: Database access
+  • TCP: Equipment heartbeat
+  
+  **Key Design Decisions:**
+  • DD-01: 4-Layer MSA
+  • DD-02: Event-Driven (RabbitMQ)
+  • DD-03: Database per Service
+  • DD-05: IPC Optimization
+  • DD-06: ElasticSearch
+end legend
+
+@enduml
+

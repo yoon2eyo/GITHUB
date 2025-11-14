@@ -1,0 +1,338 @@
+@startuml ArtifactDefinition_Infrastructure
+!pragma layout smetana
+skinparam componentStyle rectangle
+skinparam artifactStyle rectangle
+
+title Artifact Definition Diagram - Infrastructure Services (Database Zone)
+
+' ==================== DATABASE ZONE ====================
+cloud "Database Zone\n(Private Subnet)" {
+  
+  ' ============ RDS CLUSTER ============
+  node "RDS Cluster\n[multiplicity: 1 Primary + 2 Replicas per DB]" as RDSCluster <<database cluster>> {
+    
+    ' Auth DB
+    artifact "auth-db-primary" as AuthDBPrimary <<artifact, database>> {
+      database "Auth DB\n(PostgreSQL 15.4)" as AuthDB
+    }
+    
+    artifact "auth-db-schema.sql" as AuthSchema <<artifact>>
+    artifact "pgvector-extension.so" as PgVector1 <<artifact, library>>
+    
+    AuthDBPrimary ..> AuthSchema : <<deploy>>
+    AuthDBPrimary --> PgVector1 : <<dependency>>
+    
+    ' Helper DB
+    artifact "helper-db-primary" as HelperDBPrimary <<artifact, database>> {
+      database "Helper DB\n(PostgreSQL 15.4)" as HelperDB
+    }
+    
+    artifact "helper-db-schema.sql" as HelperSchema <<artifact>>
+    
+    HelperDBPrimary ..> HelperSchema : <<deploy>>
+    
+    ' Vector DB
+    artifact "vector-db-primary" as VectorDBPrimary <<artifact, database>> {
+      database "Vector DB\n(PostgreSQL 15.4 + pgvector)" as VectorDB
+    }
+    
+    artifact "vector-db-schema.sql" as VectorSchema <<artifact>>
+    artifact "ivfflat-index.sql" as IVFFlatIndex <<artifact>>
+    artifact "pgvector-extension.so" as PgVector2 <<artifact, library>>
+    
+    VectorDBPrimary ..> VectorSchema : <<deploy>>
+    VectorDBPrimary ..> IVFFlatIndex : <<deploy>>
+    VectorDBPrimary --> PgVector2 : <<dependency>>
+    
+    note right of VectorDBPrimary
+      **QA: Performance (QAS-02)**
+      - pgvector extension for cosine similarity
+      - IVFFlat index (10x faster search)
+      - Vector search: ~50ms
+      
+      **QA: Availability**
+      - Multi-AZ (Primary + 2 Replicas)
+      - Automatic failover (< 60s)
+      - Encryption at rest (AES-256)
+    end note
+    
+    ' Model DB
+    artifact "model-db-primary" as ModelDBPrimary <<artifact, database>> {
+      database "Model DB\n(PostgreSQL 15.4)" as ModelDB
+    }
+    
+    artifact "model-db-schema.sql" as ModelSchema <<artifact>>
+    
+    ModelDBPrimary ..> ModelSchema : <<deploy>>
+    
+    ' Search DB
+    artifact "search-db-primary" as SearchDBPrimary <<artifact, database>> {
+      database "Search DB\n(PostgreSQL 15.4)" as SearchDB
+    }
+    
+    artifact "search-db-schema.sql" as SearchSchema <<artifact>>
+    
+    SearchDBPrimary ..> SearchSchema : <<deploy>>
+    
+    ' Branch DB
+    artifact "branch-db-primary" as BranchDBPrimary <<artifact, database>> {
+      database "Branch DB\n(PostgreSQL 15.4)" as BranchDB
+    }
+    
+    artifact "branch-db-schema.sql" as BranchSchema <<artifact>>
+    
+    BranchDBPrimary ..> BranchSchema : <<deploy>>
+    
+    ' Monitor DB
+    artifact "monitor-db-primary" as MonitorDBPrimary <<artifact, database>> {
+      database "Monitor DB\n(PostgreSQL 15.4)" as MonitorDB
+    }
+    
+    artifact "monitor-db-schema.sql" as MonitorSchema <<artifact>>
+    
+    MonitorDBPrimary ..> MonitorSchema : <<deploy>>
+    
+    note bottom of RDSCluster
+      **Database per Service (DD-03)**
+      - 8 independent databases
+      - Each service owns its schema
+      - No cross-service DB access (except MLOps READ-ONLY)
+      
+      **QA: Modifiability**
+      - Independent schema changes
+      - Independent scaling
+      - Independent backup/restore
+    end note
+  }
+  
+  ' ============ ELASTICSEARCH CLUSTER ============
+  node "ElasticSearch Cluster\n[multiplicity: 3 nodes]" as ESCluster <<search cluster>> {
+    
+    artifact "elasticsearch-8.10.tar.gz" as ESBinary <<artifact, binary>> {
+      database "ElasticSearch Node\n(Master/Data)" as ESNode
+    }
+    
+    artifact "elasticsearch.yml" as ESConfig <<artifact>>
+    artifact "branch-index-mapping.json" as BranchIndexMapping <<artifact>>
+    artifact "review-index-mapping.json" as ReviewIndexMapping <<artifact>>
+    artifact "nori-analyzer-plugin.zip" as NoriPlugin <<artifact, plugin>>
+    
+    ESBinary ..> ESConfig : <<deploy>>
+    ESBinary ..> BranchIndexMapping : <<deploy>>
+    ESBinary ..> ReviewIndexMapping : <<deploy>>
+    ESBinary --> NoriPlugin : <<dependency>>
+    
+    note right of ESCluster
+      **QA: Performance (QAS-03)**
+      - Inverted Index for full-text search (~50ms)
+      - Nori Analyzer (한글 형태소 분석)
+      - 5 primary shards, 1 replica shard
+      
+      **QA: Availability**
+      - 3-node cluster (Master + 2 Data)
+      - Replica shards (node failure tolerance)
+      - Cluster auto-healing
+      
+      **QA: Scalability**
+      - Horizontal scaling (add data nodes)
+      - Shard rebalancing
+    end note
+  }
+  
+  ' ============ RABBITMQ CLUSTER ============
+  node "RabbitMQ Cluster\n[multiplicity: 3 nodes]" as MQCluster <<message broker cluster>> {
+    
+    artifact "rabbitmq-server-3.12.8.tar.gz" as RabbitMQBinary <<artifact, binary>> {
+      queue "RabbitMQ Node\n(Quorum Queue)" as RabbitMQNode
+    }
+    
+    artifact "rabbitmq.conf" as RabbitMQConfig <<artifact>>
+    artifact "queue-definitions.json" as QueueDef <<artifact>>
+    artifact "exchange-definitions.json" as ExchangeDef <<artifact>>
+    artifact "erlang-26.tar.gz" as Erlang <<artifact, library>>
+    
+    RabbitMQBinary ..> RabbitMQConfig : <<deploy>>
+    RabbitMQBinary ..> QueueDef : <<deploy>>
+    RabbitMQBinary ..> ExchangeDef : <<deploy>>
+    RabbitMQBinary --> Erlang : <<dependency>>
+    
+    note right of MQCluster
+      **QA: Availability (DD-02)**
+      - Quorum Queue (3-node Raft consensus)
+      - at-least-once delivery guarantee
+      - Message persistence (disk)
+      - Leader failover (< 5s)
+      
+      **QA: Modifiability**
+      - Topic Exchange (flexible routing)
+      - Loose coupling (Pub/Sub)
+      - Easy to add new consumers
+      
+      **Event Types:**
+      - TaskSubmittedEvent
+      - TaskConfirmedEvent
+      - BranchPreferenceCreatedEvent
+      - EquipmentFaultEvent
+      - AccessGrantedEvent / AccessDeniedEvent
+      - ModelDeployedEvent
+    end note
+  }
+  
+  ' ============ REDIS CACHE CLUSTER ============
+  node "Redis Cache Cluster\n[multiplicity: 3 nodes]" as RedisCluster <<cache cluster>> {
+    
+    artifact "redis-server-7.2.tar.gz" as RedisBinary <<artifact, binary>> {
+      database "Redis Node\n(Primary/Replica)" as RedisNode
+    }
+    
+    artifact "redis.conf" as RedisConfig <<artifact>>
+    artifact "sentinel.conf" as SentinelConfig <<artifact>>
+    
+    RedisBinary ..> RedisConfig : <<deploy>>
+    RedisBinary ..> SentinelConfig : <<deploy>>
+    
+    note right of RedisCluster
+      **QA: Performance (QAS-02)**
+      - In-memory storage (Sub-millisecond)
+      - Face Vector Cache hit: ~1ms
+      - Cache hit rate: 90%+
+      - DB query reduction: 98%
+      
+      **QA: Availability**
+      - Redis Sentinel (3-node monitoring)
+      - Automatic failover (< 5s)
+      - RDB snapshot + AOF persistence
+      
+      **Cache Strategy:**
+      - LRU eviction policy
+      - TTL: 24 hours (Face Vectors)
+      - TTL: 30 minutes (Session)
+    end note
+  }
+  
+  ' ============ S3 STORAGE ============
+  node "S3 Storage\n(AWS S3 / GCP Cloud Storage)" as S3Node <<object storage>> {
+    
+    artifact "task-photos/" as TaskPhotos <<artifact, s3-bucket>> {
+      database "Task Photos\n(Helper uploads)" as TaskPhotosBucket
+    }
+    
+    artifact "face-images/" as FaceImages <<artifact, s3-bucket>> {
+      database "Face Images\n(Customer uploads)" as FaceImagesBucket
+    }
+    
+    artifact "ml-models/" as MLModels <<artifact, s3-bucket>> {
+      database "ML Model Weights\n(MLOps uploads)" as MLModelsBucket
+    }
+    
+    artifact "lifecycle-policy.json" as LifecyclePolicy <<artifact>>
+    artifact "bucket-policy.json" as BucketPolicy <<artifact>>
+    
+    TaskPhotos ..> LifecyclePolicy : <<deploy>>
+    FaceImages ..> LifecyclePolicy : <<deploy>>
+    MLModels ..> BucketPolicy : <<deploy>>
+    
+    note right of S3Node
+      **QA: Availability**
+      - 99.99% SLA
+      - 11-nines durability (99.999999999%)
+      - Cross-region replication (DR)
+      
+      **QA: Scalability**
+      - Unlimited storage (Exabyte scale)
+      - 5,500+ GET req/s per prefix
+      
+      **QA: Security (QAS-04)**
+      - Encryption at rest (SSE-S3, AES-256)
+      - Encryption in transit (TLS 1.2)
+      - Pre-signed URL (temporary access)
+      - Bucket Policy (IP Whitelist)
+      
+      **QA: Cost**
+      - Lifecycle Policy (Standard → IA → Glacier)
+      - 70% cost reduction (1-year retention)
+    end note
+  }
+}
+
+' ==================== SERVICE DEPENDENCIES ====================
+"auth-service.jar" ..> AuthDBPrimary : <<JDBC>>
+"helper-service.jar" ..> HelperDBPrimary : <<JDBC>>
+"access-service.jar" ..> VectorDBPrimary : <<JDBC>>
+"facemodel-service.jar" ..> VectorDBPrimary : <<JDBC>>
+"mlops-service.jar" ..> ModelDBPrimary : <<JDBC>>
+"search-service.jar" ..> SearchDBPrimary : <<JDBC>>
+"branchowner-service.jar" ..> BranchDBPrimary : <<JDBC>>
+"monitoring-service.jar" ..> MonitorDBPrimary : <<JDBC>>
+
+"search-service.jar" ..> ESBinary : <<ES API>>
+
+"auth-service.jar" ..> RabbitMQBinary : <<AMQP>>
+"helper-service.jar" ..> RabbitMQBinary : <<AMQP>>
+"search-service.jar" ..> RabbitMQBinary : <<AMQP>>
+"branchowner-service.jar" ..> RabbitMQBinary : <<AMQP>>
+"monitoring-service.jar" ..> RabbitMQBinary : <<AMQP>>
+"notification-service.jar" ..> RabbitMQBinary : <<AMQP>>
+"access-service.jar" ..> RabbitMQBinary : <<AMQP>>
+"facemodel-service.jar" ..> RabbitMQBinary : <<AMQP>>
+"mlops-service.jar" ..> RabbitMQBinary : <<AMQP>>
+
+"api-gateway-service.jar" ..> RedisBinary : <<Redis Protocol (Session, Rate Limit)>>
+"access-service.jar" ..> RedisBinary : <<Redis Protocol (Face Vector Cache)>>
+
+"helper-service.jar" ..> TaskPhotos : <<S3 API (Upload)>>
+"auth-service.jar" ..> FaceImages : <<S3 API (Upload)>>
+"mlops-service.jar" ..> TaskPhotos : <<S3 API (Download)>>
+"mlops-service.jar" ..> FaceImages : <<S3 API (Download)>>
+"mlops-service.jar" ..> MLModels : <<S3 API (Upload/Download)>>
+
+' ==================== LEGEND ====================
+legend bottom left
+  **Artifact Definition - Infrastructure Services**
+  
+  **Artifact Types:**
+  • <<artifact, database>>: Database instance (PostgreSQL)
+  • <<artifact, binary>>: Binary executable (ES, RabbitMQ, Redis)
+  • <<artifact, s3-bucket>>: S3 bucket (Object storage)
+  • <<artifact, plugin>>: Plugin/Extension (Nori Analyzer, pgvector)
+  • <<artifact, library>>: Runtime library (Erlang)
+  
+  **Database Artifacts (RDS):**
+  • auth-db-primary, helper-db-primary, vector-db-primary
+  • model-db-primary, search-db-primary, branch-db-primary
+  • monitor-db-primary
+  • Schema files: *-db-schema.sql
+  
+  **Search Engine Artifacts (ElasticSearch):**
+  • elasticsearch-8.10.tar.gz (Binary)
+  • elasticsearch.yml (Cluster config)
+  • branch-index-mapping.json, review-index-mapping.json
+  • nori-analyzer-plugin.zip (Korean morphological analysis)
+  
+  **Message Broker Artifacts (RabbitMQ):**
+  • rabbitmq-server-3.12.8.tar.gz (Binary)
+  • rabbitmq.conf (Quorum Queue config)
+  • queue-definitions.json, exchange-definitions.json
+  • erlang-26.tar.gz (Runtime)
+  
+  **Cache Artifacts (Redis):**
+  • redis-server-7.2.tar.gz (Binary)
+  • redis.conf (LRU, persistence config)
+  • sentinel.conf (HA config)
+  
+  **Object Storage Artifacts (S3):**
+  • task-photos/ (Helper uploads, 3-10MB per photo)
+  • face-images/ (Customer uploads, 500KB per photo)
+  • ml-models/ (MLOps uploads, 100-500MB per model)
+  • lifecycle-policy.json (Standard → IA → Glacier)
+  • bucket-policy.json (IP Whitelist, Pre-signed URL)
+  
+  **QA Considerations:**
+  • Performance: Redis Cache (Sub-ms), ElasticSearch (~50ms)
+  • Availability: Multi-AZ (RDS), Quorum Queue (RabbitMQ), Sentinel (Redis)
+  • Modifiability: Database per Service (independent schemas)
+  • Security: Encryption at rest/in transit, Private subnet
+end legend
+
+@enduml
+

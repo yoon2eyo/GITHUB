@@ -1,0 +1,283 @@
+@startuml UC21_EquipmentStatusMonitoring
+title UC-21: 설비 상태 모니터링 (Equipment Status Monitoring)
+autonumber
+
+' Actors
+participant "Quartz Scheduler\n<<Timer>>" as Timer
+
+' Monitoring Service Node
+box "Monitoring Service Node" #LightYellow
+  participant "EquipmentHealthChecker\n<<Business>>" as HealthChecker
+  participant "PingEchoExecutor\n<<Business>>" as PingExecutor
+  participant "FaultDetector\n<<Business>>" as FaultDetector
+  participant "AuditLogger\n<<Business>>" as AuditLogger
+  participant "EquipmentStatusJpaRepository\n<<System Interface>>" as StatusRepo
+  participant "EquipmentGatewayClient\n<<System Interface>>" as EquipGW
+  participant "RabbitMQAdapter\n<<System Interface>>" as MQ
+end box
+
+database "MonitorDatabase" as MonitorDB
+participant "Branch Equipment" as Equipment
+queue "RabbitMQ Broker" as Broker
+
+' Notification Service Node
+box "Notification Service Node" #LightPink
+  participant "NotificationDispatcherConsumer\n<<Business>>" as NotifyConsumer
+  participant "NotificationDispatcherManager\n<<Business>>" as NotifyManager
+  participant "FcmPushGateway\n<<System Interface>>" as FCM
+end box
+
+actor "Branch Manager\n(Mobile App)" as Manager
+
+== Main Success Scenario - All Equipment Normal ==
+
+' Step 1: Timer triggers monitoring (every 10 seconds)
+Timer -> HealthChecker : <<trigger>> checkEquipmentHealth()
+note right
+  **DD-04 Tactic: Ping/echo**
+  Triggered every 10 seconds
+  (Quartz CronExpression: "*/10 * * * * ?")
+end note
+
+' Step 2: Check all equipment status from database
+HealthChecker -> StatusRepo : findAllEquipment()
+StatusRepo -> MonitorDB : <<JDBC>>\nSELECT equipment_id, last_heartbeat_time, status\nFROM equipment_status
+MonitorDB --> StatusRepo : ResultSet
+StatusRepo --> HealthChecker : List<EquipmentStatusDto>
+
+' Step 3: Validate heartbeat timeout
+HealthChecker -> HealthChecker : validateHeartbeatTimeout(equipmentList)
+note left
+  **Validation Logic:**
+  currentTime = System.currentTimeMillis()
+  threshold = 30,000ms (30 seconds)
+  
+  For each equipment:
+    timeSinceLastHeartbeat = 
+      currentTime - equipment.lastHeartbeatTime
+    
+    if (timeSinceLastHeartbeat > threshold):
+      faultyEquipment.add(equipment)
+  
+  **Heartbeat 3회 미수신 기준:**
+  - Equipment heartbeat interval: 10분
+  - But Ping/echo checks every 10초
+  - 30초 = 3 × 10초 (3 ping cycles)
+end note
+
+alt All Equipment Normal (Main Success Scenario)
+  ' Step 4: All equipment OK
+  HealthChecker --> Timer : void (all normal)
+  note over HealthChecker
+    **Main Success Scenario**
+    All equipment heartbeat within 30 seconds
+    No action required
+    UC ends successfully
+  end note
+
+else Faulty Equipment Detected (Alternative 3a)
+  ' Alternative 3a: Fault Detection
+  note over HealthChecker
+    **Alternative 3a: 고장 설비 식별**
+    Equipment heartbeat > 30 seconds
+    Trigger ping/echo verification
+  end note
+  
+  ' Step 5: Send ping to faulty equipment
+  loop For each faulty equipment
+    HealthChecker -> PingExecutor : sendPing(equipmentId)
+    
+    PingExecutor -> EquipGW : sendPingRequest(equipmentId)
+    EquipGW -> Equipment : <<HTTPS>> POST /equipment/ping\n{equipmentId, timestamp}
+    note right
+      **Ping Request**
+      - Timeout: 5 seconds
+      - Expected response: {status: "ok"}
+    end note
+    
+    alt Equipment Responds (False Positive)
+      ' Equipment is actually OK (network delay)
+      Equipment --> EquipGW : HTTP 200 OK\n{status: "ok", equipmentId}
+      EquipGW --> PingExecutor : PingResponse(success)
+      
+      ' Update status to normal
+      PingExecutor -> StatusRepo : updateStatus(equipmentId, "NORMAL")
+      StatusRepo -> MonitorDB : <<JDBC>>\nUPDATE equipment_status\nSET status='NORMAL', last_heartbeat_time=NOW()
+      MonitorDB --> StatusRepo : updated
+      StatusRepo --> PingExecutor : updated
+      
+      note over PingExecutor
+        **False Positive Handled**
+        Equipment is OK, just delayed
+        No alert needed
+      end note
+      
+    else Equipment Does Not Respond (Confirmed Fault)
+      ' Timeout or error response
+      EquipGW --> PingExecutor : PingResponse(timeout/error)
+      note right
+        **Confirmed Fault Conditions:**
+        1. HTTP timeout (> 5 seconds)
+        2. Connection refused
+        3. HTTP 5xx error
+      end note
+      
+      ' Step 6: Report to FaultDetector
+      PingExecutor -> FaultDetector : detectFault(equipmentId, reason)
+      
+      ' Step 7: Update fault status in DB
+      FaultDetector -> StatusRepo : updateStatus(equipmentId, "FAULT")
+      StatusRepo -> MonitorDB : <<JDBC>>\nUPDATE equipment_status\nSET status='FAULT', fault_detected_at=NOW()
+      MonitorDB --> StatusRepo : updated
+      StatusRepo --> FaultDetector : updated
+      
+      ' Step 8: Publish EquipmentFaultEvent
+      FaultDetector -> MQ : publish(EquipmentFaultEvent)
+      note right
+        **EquipmentFaultEvent:**
+        {
+          equipmentId: "EQ-12345",
+          branchId: "BR-001",
+          faultType: "HEARTBEAT_TIMEOUT",
+          detectedAt: timestamp,
+          lastHeartbeat: timestamp,
+          reason: "No response for 30+ seconds"
+        }
+      end note
+      
+      MQ -> Broker : <<AMQP>> EquipmentFaultEvent
+      note over Broker
+        **DD-04: Passive Redundancy**
+        - Event persistence in queue
+        - Guaranteed delivery
+        - Decoupled notification
+      end note
+      
+      ' Step 9: Audit logging
+      FaultDetector -> AuditLogger : logFaultDetection(equipmentId, reason)
+      AuditLogger -> StatusRepo : saveAuditLog(auditLog)
+      StatusRepo -> MonitorDB : <<JDBC>>\nINSERT INTO audit_logs\n(event_type, equipment_id, details)
+      MonitorDB --> StatusRepo : saved
+      StatusRepo --> AuditLogger : saved
+      
+      note over AuditLogger
+        **DD-04: Maintain Audit Trail**
+        - All fault detections logged
+        - Forensic analysis support
+        - Compliance requirement
+      end note
+      
+      ' Step 10: Notification Service subscribes and processes
+      Broker -> NotifyConsumer : <<AMQP>> EquipmentFaultEvent
+      
+      NotifyConsumer -> NotifyManager : dispatchFaultAlert(event)
+      
+      ' Step 11: Get branch owner info
+      NotifyManager -> NotifyManager : getBranchOwnerInfo(branchId)
+      note left
+        Retrieve branch owner's
+        device token from cache/DB
+      end note
+      
+      ' Step 12: Send push notification
+      NotifyManager -> FCM : sendPushNotification(ownerId, message)
+      note right
+        **Push Notification Content:**
+        Title: "설비 고장 알림"
+        Body: "지점 설비(EQ-12345)에서 
+               고장이 감지되었습니다."
+        Data: {equipmentId, branchId, faultType}
+        Priority: HIGH
+      end note
+      
+      FCM -> Manager : <<FCM Push>> 설비 고장 알림
+      
+      Manager --> FCM : ACK
+      FCM --> NotifyManager : DeliveryResult(success)
+      
+      note over Manager
+        **QAS-01 Target Achievement**
+        - Fault detected at: T0
+        - Event published at: T0 + 2s
+        - Notification sent at: T0 + 5s
+        - Manager received at: T0 + 6s
+        **Total: 6초 << 15초 (P95)** ✓
+      end note
+      
+      NotifyManager --> NotifyConsumer : notificationSent
+      NotifyConsumer --> Broker : ACK
+      
+    end
+  end
+  
+  HealthChecker --> Timer : void (monitoring complete)
+end
+
+== QAS-01 Availability Achievement ==
+note over Timer, Manager
+  **QAS-01: 설비 고장 감지 및 실시간 알림 체계**
+  
+  **Two-Level Fault Detection (DD-04):**
+  
+  1. **Heartbeat (Equipment-driven)**: 
+     - Equipment sends status every 10 min
+     - Immediate fault detection if status='고장'
+     - Direct EquipmentFaultEvent publication
+     - Not shown in this sequence (different UC)
+  
+  2. **Ping/echo (System-driven)** [This UC]:
+     - Timer triggers check every 10 seconds
+     - Detect timeout if no heartbeat for 30+ seconds
+     - Ping verification to eliminate false positives
+     - Confirmed fault → Event publication
+  
+  **Performance Measurement:**
+  - Fault detection: 10-30초 (depends on check cycle)
+  - Ping verification: 5초 (timeout)
+  - Event publication: 1-2초
+  - Notification delivery: 1-2초
+  - **Total P95: 6-10초 << 15초** ✓
+  - **Total P99: 10-15초 << 30초** ✓
+  
+  **Tactics Applied:**
+  - **Ping/echo** (DD-04): Active health checking
+  - **Passive Redundancy** (DD-04): Event-based notification
+  - **Maintain Audit Trail** (DD-04): Forensic logging
+  - **Use an Intermediary** (DD-02): Message Broker decoupling
+  
+  **Availability Benefits:**
+  - Early fault detection (before user reports)
+  - False positive elimination (ping verification)
+  - Automated alerting (no manual intervention)
+  - Complete audit trail (compliance & debugging)
+end note
+
+== Additional Scenario: Heartbeat-based Detection ==
+note over Equipment, FaultDetector
+  **Complementary Detection Path (Not in this UC):**
+  
+  **Heartbeat Reception:**
+  Equipment → EquipmentStatusReceiver: 
+    POST /monitoring/heartbeat
+    {equipmentId, status: "고장", timestamp}
+  
+  If (status == "고장"):
+    HeartbeatReceiver → FaultDetector: detectFault()
+    FaultDetector → Publish EquipmentFaultEvent
+  
+  **Advantage:**
+  - Immediate detection (no 30-second delay)
+  - Equipment self-reports known issues
+  
+  **This UC (Ping/echo):**
+  - Backup detection mechanism
+  - Catches silent failures (network, power)
+  - Validates no-heartbeat scenarios
+  
+  **Together:**
+  - Comprehensive fault coverage
+  - <15초 detection guarantee (QAS-01)
+end note
+
+@enduml
+

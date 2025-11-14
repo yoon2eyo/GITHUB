@@ -1,0 +1,307 @@
+@startuml ArtifactDefinition_ApplicationServices
+!pragma layout smetana
+skinparam componentStyle rectangle
+skinparam artifactStyle rectangle
+
+title Artifact Definition Diagram - Application Services (Kubernetes Cluster)
+
+' ==================== KUBERNETES CLUSTER ====================
+node "Kubernetes Cluster" as K8sCluster <<cluster>> {
+  
+  ' ============ LOAD BALANCER NODE ============
+  node "Load Balancer Node\n[multiplicity: 2+]" as LBNode <<load balancer>> {
+    artifact "nginx-ingress-controller.yaml" as NginxArtifact <<artifact>> {
+      component "Nginx Ingress Controller" as NginxController
+    }
+    
+    artifact "ingress-config.yaml" as IngressConfig <<artifact>>
+    artifact "tls-certificates.pem" as TLSCert <<artifact>>
+    
+    NginxArtifact ..> IngressConfig : <<deploy>>
+    NginxArtifact ..> TLSCert : <<deploy>>
+  }
+  
+  ' ============ API GATEWAY NODE ============
+  node "API Gateway Node\n[multiplicity: 3]" as GatewayNode <<application server>> {
+    artifact "api-gateway-service.jar" as GatewayJar <<artifact>> {
+      component "API Gateway Service\n(All Components)" as GatewayService
+    }
+    
+    artifact "application-gateway.yml" as GatewayConfig <<artifact>>
+    artifact "jwt-public-key.pem" as JWTKey <<artifact>>
+    
+    artifact "spring-boot-3.2.4.jar" as SpringBoot1 <<artifact, library>>
+    artifact "spring-cloud-gateway-4.1.jar" as SpringCloudGW <<artifact, library>>
+    artifact "resilience4j-2.1.0.jar" as Resilience4j1 <<artifact, library>>
+    
+    GatewayJar ..> GatewayConfig : <<deploy>>
+    GatewayJar ..> JWTKey : <<deploy>>
+    GatewayJar --> SpringBoot1 : <<dependency>>
+    GatewayJar --> SpringCloudGW : <<dependency>>
+    GatewayJar --> Resilience4j1 : <<dependency>>
+  }
+  
+  ' ============ REAL-TIME ACCESS NODE (CO-LOCATED) ============
+  node "Real-Time Access Node\n[multiplicity: 2]\n(Co-located Pod)" as AccessNode <<application server>> {
+    artifact "access-service.jar" as AccessJar <<artifact>> {
+      component "Access Service\n(6 Components)" as AccessService
+    }
+    
+    artifact "facemodel-service.jar" as FaceModelJar <<artifact>> {
+      component "FaceModel Service\n(4 Components)" as FaceModelService
+    }
+    
+    artifact "application-access.yml" as AccessConfig <<artifact>>
+    artifact "application-facemodel.yml" as FaceModelConfig <<artifact>>
+    
+    artifact "spring-boot-3.2.4.jar" as SpringBoot2 <<artifact, library>>
+    artifact "grpc-java-1.58.0.jar" as GRPC1 <<artifact, library>>
+    artifact "lettuce-6.2.jar" as Lettuce1 <<artifact, library>>
+    artifact "postgresql-driver-42.6.jar" as PgDriver1 <<artifact, library>>
+    
+    AccessJar ..> AccessConfig : <<deploy>>
+    FaceModelJar ..> FaceModelConfig : <<deploy>>
+    
+    AccessJar --> SpringBoot2 : <<dependency>>
+    AccessJar --> GRPC1 : <<dependency>>
+    AccessJar --> Lettuce1 : <<dependency>>
+    AccessJar --> PgDriver1 : <<dependency>>
+    
+    FaceModelJar --> SpringBoot2 : <<dependency>>
+    FaceModelJar --> GRPC1 : <<dependency>>
+    FaceModelJar --> PgDriver1 : <<dependency>>
+    
+    AccessJar ..> FaceModelJar : <<IPC call>>
+    
+    note right of AccessNode
+      **QA: Performance (QAS-02)**
+      - Co-located in same Pod
+      - IPC/gRPC: < 10ms
+      - Shared libraries: spring-boot, grpc
+    end note
+  }
+  
+  ' ============ AUTH SERVICE NODE ============
+  node "Auth Service Node\n[multiplicity: 2]" as AuthNode <<application server>> {
+    artifact "auth-service.jar" as AuthJar <<artifact>> {
+      component "Auth Service\n(8 Components)" as AuthService
+    }
+    
+    artifact "application-auth.yml" as AuthConfig <<artifact>>
+    
+    artifact "spring-boot-3.2.4.jar" as SpringBoot3 <<artifact, library>>
+    artifact "spring-security-6.1.jar" as SpringSecurity <<artifact, library>>
+    artifact "jjwt-0.12.3.jar" as JJWT <<artifact, library>>
+    artifact "postgresql-driver-42.6.jar" as PgDriver2 <<artifact, library>>
+    artifact "rabbitmq-client-5.18.jar" as RabbitMQ1 <<artifact, library>>
+    
+    AuthJar ..> AuthConfig : <<deploy>>
+    AuthJar --> SpringBoot3 : <<dependency>>
+    AuthJar --> SpringSecurity : <<dependency>>
+    AuthJar --> JJWT : <<dependency>>
+    AuthJar --> PgDriver2 : <<dependency>>
+    AuthJar --> RabbitMQ1 : <<dependency>>
+  }
+  
+  ' ============ HELPER SERVICE NODE ============
+  node "Helper Service Node\n[multiplicity: 2]" as HelperNode <<application server>> {
+    artifact "helper-service.jar" as HelperJar <<artifact>> {
+      component "Helper Service\n(7 Components)" as HelperService
+    }
+    
+    artifact "application-helper.yml" as HelperConfig <<artifact>>
+    
+    artifact "spring-boot-3.2.4.jar" as SpringBoot4 <<artifact, library>>
+    artifact "aws-s3-sdk-2.20.jar" as S3SDK1 <<artifact, library>>
+    artifact "postgresql-driver-42.6.jar" as PgDriver3 <<artifact, library>>
+    artifact "rabbitmq-client-5.18.jar" as RabbitMQ2 <<artifact, library>>
+    
+    HelperJar ..> HelperConfig : <<deploy>>
+    HelperJar --> SpringBoot4 : <<dependency>>
+    HelperJar --> S3SDK1 : <<dependency>>
+    HelperJar --> PgDriver3 : <<dependency>>
+    HelperJar --> RabbitMQ2 : <<dependency>>
+  }
+  
+  ' ============ SEARCH SERVICE NODE ============
+  node "Search Service Node\n[multiplicity: 3]" as SearchNode <<application server>> {
+    artifact "search-service.jar" as SearchJar <<artifact>> {
+      component "Search Service\n(8 Components)" as SearchService
+    }
+    
+    artifact "application-search.yml" as SearchConfig <<artifact>>
+    
+    artifact "spring-boot-3.2.4.jar" as SpringBoot5 <<artifact, library>>
+    artifact "elasticsearch-client-8.10.jar" as ESClient <<artifact, library>>
+    artifact "postgresql-driver-42.6.jar" as PgDriver4 <<artifact, library>>
+    artifact "rabbitmq-client-5.18.jar" as RabbitMQ3 <<artifact, library>>
+    
+    SearchJar ..> SearchConfig : <<deploy>>
+    SearchJar --> SpringBoot5 : <<dependency>>
+    SearchJar --> ESClient : <<dependency>>
+    SearchJar --> PgDriver4 : <<dependency>>
+    SearchJar --> RabbitMQ3 : <<dependency>>
+    
+    note right of SearchNode
+      **QA: Performance (QAS-03)**
+      - 3 replicas for high traffic
+      - Hot/Cold Path separation
+    end note
+  }
+  
+  ' ============ BRANCHOWNER SERVICE NODE ============
+  node "BranchOwner Service Node\n[multiplicity: 2]" as BranchOwnerNode <<application server>> {
+    artifact "branchowner-service.jar" as BranchOwnerJar <<artifact>> {
+      component "BranchOwner Service\n(5 Components)" as BranchOwnerService
+    }
+    
+    artifact "application-branchowner.yml" as BranchOwnerConfig <<artifact>>
+    
+    artifact "spring-boot-3.2.4.jar" as SpringBoot6 <<artifact, library>>
+    artifact "postgresql-driver-42.6.jar" as PgDriver5 <<artifact, library>>
+    artifact "rabbitmq-client-5.18.jar" as RabbitMQ4 <<artifact, library>>
+    
+    BranchOwnerJar ..> BranchOwnerConfig : <<deploy>>
+    BranchOwnerJar --> SpringBoot6 : <<dependency>>
+    BranchOwnerJar --> PgDriver5 : <<dependency>>
+    BranchOwnerJar --> RabbitMQ4 : <<dependency>>
+  }
+  
+  ' ============ MONITORING SERVICE NODE ============
+  node "Monitoring Service Node\n[multiplicity: 2]" as MonitorNode <<application server>> {
+    artifact "monitoring-service.jar" as MonitorJar <<artifact>> {
+      component "Monitoring Service\n(7 Components)" as MonitorService
+    }
+    
+    artifact "application-monitoring.yml" as MonitorConfig <<artifact>>
+    
+    artifact "spring-boot-3.2.4.jar" as SpringBoot7 <<artifact, library>>
+    artifact "quartz-scheduler-2.3.jar" as Quartz <<artifact, library>>
+    artifact "postgresql-driver-42.6.jar" as PgDriver6 <<artifact, library>>
+    artifact "rabbitmq-client-5.18.jar" as RabbitMQ5 <<artifact, library>>
+    
+    MonitorJar ..> MonitorConfig : <<deploy>>
+    MonitorJar --> SpringBoot7 : <<dependency>>
+    MonitorJar --> Quartz : <<dependency>>
+    MonitorJar --> PgDriver6 : <<dependency>>
+    MonitorJar --> RabbitMQ5 : <<dependency>>
+    
+    note right of MonitorNode
+      **QA: Availability (QAS-01)**
+      - Quartz Scheduler for fault detection
+      - Heartbeat + Ping/Echo
+    end note
+  }
+  
+  ' ============ NOTIFICATION SERVICE NODE ============
+  node "Notification Service Node\n[multiplicity: 3]" as NotifyNode <<application server>> {
+    artifact "notification-service.jar" as NotifyJar <<artifact>> {
+      component "Notification Service\n(4 Components)" as NotifyService
+    }
+    
+    artifact "application-notification.yml" as NotifyConfig <<artifact>>
+    artifact "fcm-service-account.json" as FCMKey <<artifact>>
+    
+    artifact "spring-boot-3.2.4.jar" as SpringBoot8 <<artifact, library>>
+    artifact "firebase-admin-sdk-9.2.jar" as FCMAdmin <<artifact, library>>
+    artifact "rabbitmq-client-5.18.jar" as RabbitMQ6 <<artifact, library>>
+    
+    NotifyJar ..> NotifyConfig : <<deploy>>
+    NotifyJar ..> FCMKey : <<deploy>>
+    NotifyJar --> SpringBoot8 : <<dependency>>
+    NotifyJar --> FCMAdmin : <<dependency>>
+    NotifyJar --> RabbitMQ6 : <<dependency>>
+  }
+  
+  ' ============ MLOPS SERVICE NODE (GPU) ============
+  node "MLOps Service Node\n[multiplicity: 1-2]\n(GPU Enabled)" as MLOpsNode <<application server>> {
+    artifact "mlops-service.jar" as MLOpsJar <<artifact>> {
+      component "MLOps Service\n(9 Components)" as MLOpsService
+    }
+    
+    artifact "ml-inference-engine.py" as MLEngine <<artifact>> {
+      component "ML Inference Engine\n(TensorFlow/PyTorch)" as MLEngineComponent
+    }
+    
+    artifact "application-mlops.yml" as MLOpsConfig <<artifact>>
+    artifact "model-weights-v1.0.pb" as ModelWeights <<artifact>>
+    
+    artifact "spring-boot-3.2.4.jar" as SpringBoot9 <<artifact, library>>
+    artifact "grpc-java-1.58.0.jar" as GRPC2 <<artifact, library>>
+    artifact "postgresql-driver-42.6.jar" as PgDriver7 <<artifact, library>>
+    artifact "rabbitmq-client-5.18.jar" as RabbitMQ7 <<artifact, library>>
+    artifact "aws-s3-sdk-2.20.jar" as S3SDK2 <<artifact, library>>
+    
+    artifact "tensorflow-2.13.jar" as TensorFlow <<artifact, library>>
+    artifact "pytorch-2.1.jar" as PyTorch <<artifact, library>>
+    artifact "cuda-12.2.so" as CUDA <<artifact, library>>
+    artifact "cudnn-8.9.so" as cuDNN <<artifact, library>>
+    
+    MLOpsJar ..> MLOpsConfig : <<deploy>>
+    MLOpsJar ..> ModelWeights : <<deploy>>
+    MLEngine ..> ModelWeights : <<uses>>
+    
+    MLOpsJar --> SpringBoot9 : <<dependency>>
+    MLOpsJar --> GRPC2 : <<dependency>>
+    MLOpsJar --> PgDriver7 : <<dependency>>
+    MLOpsJar --> RabbitMQ7 : <<dependency>>
+    MLOpsJar --> S3SDK2 : <<dependency>>
+    
+    MLEngine --> TensorFlow : <<dependency>>
+    MLEngine --> PyTorch : <<dependency>>
+    MLEngine --> CUDA : <<dependency>>
+    MLEngine --> cuDNN : <<dependency>>
+    
+    MLOpsJar ..> MLEngine : <<local call>>
+    
+    note right of MLOpsNode
+      **QA: Modifiability (QAS-06)**
+      - Hot Swap: model-weights-v1.0.pb
+      - GPU libraries: CUDA, cuDNN
+      - Deployment: < 1 min
+    end note
+  }
+}
+
+' ==================== CROSS-NODE DEPENDENCIES ====================
+GatewayJar ..> AuthJar : <<HTTPS>>
+GatewayJar ..> AccessJar : <<HTTPS>>
+GatewayJar ..> HelperJar : <<HTTPS>>
+GatewayJar ..> SearchJar : <<HTTPS>>
+GatewayJar ..> BranchOwnerJar : <<HTTPS>>
+GatewayJar ..> MonitorJar : <<HTTPS>>
+GatewayJar ..> MLOpsJar : <<HTTPS>>
+
+MLOpsJar ..> FaceModelJar : <<gRPC (Hot Swap)>>
+
+' ==================== LEGEND ====================
+legend bottom left
+  **Artifact Definition - Application Services**
+  
+  **Artifact Types:**
+  • <<artifact>>: Deployable files (JAR, YAML, PEM)
+  • <<artifact, library>>: Dependency libraries
+  • <<manifest>>: Component implemented by Artifact
+  • <<deploy>>: Configuration/Resource deployment
+  • <<dependency>>: Library dependency
+  
+  **Key Artifacts:**
+  • api-gateway-service.jar (3 replicas)
+  • access-service.jar + facemodel-service.jar (Co-located, 2 replicas)
+  • auth-service.jar (2 replicas)
+  • helper-service.jar (2 replicas)
+  • search-service.jar (3 replicas)
+  • branchowner-service.jar (2 replicas)
+  • monitoring-service.jar (2 replicas)
+  • notification-service.jar (3 replicas)
+  • mlops-service.jar + ml-inference-engine.py (1-2 replicas)
+  
+  **QA Considerations:**
+  • Performance: Co-located Access + FaceModel (IPC)
+  • Availability: Multi-replica deployment (2-3 instances)
+  • Modifiability: Hot Swap (MLOps → FaceModel)
+  • Security: TLS certificates, JWT keys, FCM keys
+end legend
+
+@enduml
+

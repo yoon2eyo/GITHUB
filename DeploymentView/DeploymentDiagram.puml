@@ -1,0 +1,265 @@
+@startuml SmartFitnessDeploymentDiagram
+!pragma layout smetana
+skinparam componentStyle rectangle
+skinparam nodeStyle rectangle
+
+title Smart Fitness Management System - Deployment Diagram
+
+' ==================== CLIENT ZONE ====================
+cloud "Client Zone" {
+  node "Customer Mobile Device" as CustomerDevice <<device>> {
+    component "Customer App" as CustomerApp
+    artifact "iOS/Android" as MobileOS1 <<execution environment>>
+  }
+  
+  node "Helper Mobile Device" as HelperDevice <<device>> {
+    component "Helper App" as HelperApp
+    artifact "iOS/Android" as MobileOS2 <<execution environment>>
+  }
+  
+  node "Manager Mobile Device" as ManagerDevice <<device>> {
+    component "Manager App" as ManagerApp
+    artifact "iOS/Android" as MobileOS3 <<execution environment>>
+  }
+  
+  node "Operations Workstation" as OpsDevice <<device>> {
+    component "Admin Dashboard" as OpsDash
+    artifact "Web Browser" as Browser <<execution environment>>
+  }
+}
+
+' ==================== BRANCH ZONE ====================
+cloud "Branch Zone\n(각 지점별)" {
+  node "Branch Equipment Node" as BranchNode <<device>> #LightCoral {
+    component "Camera Controller" as Camera
+    component "Gate Controller" as Gate
+    component "IoT Sensor Manager" as Sensor
+    artifact "Embedded Linux" as EmbeddedOS <<execution environment>>
+  }
+}
+
+' ==================== EXTERNAL ZONE ====================
+cloud "External Services" {
+  node "Credit Card Service" as CCNode <<external>> {
+    component "Verification API" as CCAPI
+  }
+  
+  node "LLM Service Provider" as LLMNode <<external>> {
+    component "GPT/Claude API" as LLMAPI
+  }
+  
+  node "FCM Server" as FCMNode <<external>> {
+    component "Firebase Cloud Messaging" as FCMAPI
+  }
+}
+
+' ==================== KUBERNETES CLUSTER ====================
+node "Kubernetes Cluster\n(AWS EKS / GCP GKE)" as K8sCluster <<cluster>> #Azure {
+  
+  ' Load Balancer
+  node "Load Balancer Node\n[multiplicity: 2+]" as LBNode <<load balancer>> #Lavender {
+    component "Nginx Ingress" as LoadBalancer
+    artifact "Kubernetes Service" as K8sLB <<execution environment>>
+  }
+  
+  ' API Gateway
+  node "API Gateway Node\n[multiplicity: 3]" as GatewayNode <<application server>> #Lavender {
+    component "API Gateway Service" as Gateway
+    artifact "Spring Boot 3.2.x\nJava 17\nKubernetes Pod" as GatewayEnv <<execution environment>>
+  }
+  
+  ' Real-Time Access Node (Co-located)
+  node "Real-Time Access Node\n[multiplicity: 2]\n(Access + FaceModel Co-located)" as AccessNode <<application server>> #LightCyan {
+    component "Access Service" as AccessSvc
+    component "FaceModel Service" as FaceModelSvc
+    artifact "Spring Boot 3.2.x\nJava 17\nKubernetes Pod\nCPU: 8 cores, Memory: 8GB" as AccessEnv <<execution environment>>
+  }
+  
+  ' Business Service Nodes
+  node "Auth Service Node\n[multiplicity: 2]" as AuthNode <<application server>> #LightGreen {
+    component "Auth Service" as AuthSvc
+    artifact "Spring Boot 3.2.x\nJava 17\nKubernetes Pod" as AuthEnv <<execution environment>>
+  }
+  
+  node "Helper Service Node\n[multiplicity: 2]" as HelperNode <<application server>> #LightGreen {
+    component "Helper Service" as HelperSvc
+    artifact "Spring Boot 3.2.x\nJava 17\nKubernetes Pod" as HelperEnv <<execution environment>>
+  }
+  
+  node "Search Service Node\n[multiplicity: 3]" as SearchNode <<application server>> #LightGreen {
+    component "Search Service" as SearchSvc
+    artifact "Spring Boot 3.2.x\nJava 17\nKubernetes Pod" as SearchEnv <<execution environment>>
+  }
+  
+  node "BranchOwner Service Node\n[multiplicity: 2]" as BranchNode <<application server>> #LightGreen {
+    component "BranchOwner Service" as BranchSvc
+    artifact "Spring Boot 3.2.x\nJava 17\nKubernetes Pod" as BranchEnv <<execution environment>>
+  }
+  
+  node "Monitoring Service Node\n[multiplicity: 2]" as MonitorNode <<application server>> #LightGreen {
+    component "Monitoring Service" as MonitorSvc
+    artifact "Spring Boot 3.2.x\nJava 17\nKubernetes Pod" as MonitorEnv <<execution environment>>
+  }
+  
+  node "Notification Service Node\n[multiplicity: 3]" as NotifyNode <<application server>> #LightGreen {
+    component "Notification Service" as NotifySvc
+    artifact "Spring Boot 3.2.x\nJava 17\nKubernetes Pod" as NotifyEnv <<execution environment>>
+  }
+  
+  ' AI Pipeline Node (GPU)
+  node "MLOps Service Node\n[multiplicity: 1-2]\n(GPU Enabled)" as MLOpsNode <<application server>> #LightYellow {
+    component "MLOps Service" as MLOpsSvc
+    component "ML Inference Engine" as MLEngine
+    artifact "Spring Boot 3.2.x\nJava 17\nTensorFlow 2.x\nKubernetes Pod\nNVIDIA T4 GPU × 2\nCPU: 8 cores, Memory: 16GB" as MLOpsEnv <<execution environment>>
+  }
+}
+
+' ==================== DATABASE ZONE ====================
+cloud "Database Zone\n(Private Subnet)" {
+  node "RDS Cluster\n[multiplicity: 1 primary + 2 replicas per DB]" as RDSCluster <<database cluster>> #LightGray {
+    database "Auth DB\n(PostgreSQL)" as AuthDB
+    database "Helper DB\n(PostgreSQL)" as HelperDB
+    database "Search DB\n(PostgreSQL)" as SearchDB
+    database "Branch DB\n(PostgreSQL)" as BranchDB
+    database "Monitor DB\n(PostgreSQL)" as MonitorDB
+    database "Vector DB\n(PostgreSQL + pgvector)" as VectorDB
+    database "Model DB\n(PostgreSQL)" as ModelDB
+    database "Training Data\n(S3 + PostgreSQL)" as TrainingDB
+    
+    artifact "AWS RDS / GCP Cloud SQL\nPostgreSQL 15.x" as RDSEnv <<execution environment>>
+  }
+  
+  node "ElasticSearch Cluster\n[multiplicity: 3 nodes]" as ESCluster <<search cluster>> #LightGray {
+    database "ElasticSearch\n(Sharded Index)" as ES
+    artifact "ElasticSearch 8.x\nKubernetes StatefulSet" as ESEnv <<execution environment>>
+  }
+  
+  node "RabbitMQ Cluster\n[multiplicity: 3 nodes]" as MQCluster <<message broker cluster>> #LightGray {
+    queue "RabbitMQ\nMessage Broker" as MQ
+    artifact "RabbitMQ 3.12.x\nKubernetes StatefulSet" as MQEnv <<execution environment>>
+  }
+  
+  node "Redis Cache Cluster\n[multiplicity: 3 nodes]" as RedisCluster <<cache cluster>> #LightGray {
+    database "Redis Cache" as Redis
+    artifact "Redis 7.x\nKubernetes StatefulSet" as RedisEnv <<execution environment>>
+  }
+  
+  node "S3 Storage" as S3Node <<object storage>> #LightGray {
+    database "Photo Storage\n(Task Photos, Face Images)" as S3
+    artifact "AWS S3 / GCP Cloud Storage" as S3Env <<execution environment>>
+  }
+}
+
+' ==================== CLIENT CONNECTIONS ====================
+CustomerDevice -down-> LBNode : HTTPS\n(TLS 1.3)
+HelperDevice -down-> LBNode : HTTPS\n(TLS 1.3)
+ManagerDevice -down-> LBNode : HTTPS\n(TLS 1.3)
+OpsDevice -down-> LBNode : HTTPS\n(TLS 1.3)
+
+' ==================== BRANCH EQUIPMENT CONNECTIONS ====================
+BranchNode -down-> AccessNode : HTTPS\n(Face Photo Upload)\n(Gate Control Response)
+BranchNode -down-> MonitorNode : TCP\n(Heartbeat)\nHTTPS\n(Ping/Echo)
+
+' ==================== LOAD BALANCER TO API GATEWAY ====================
+LBNode -down-> GatewayNode : HTTP\n(Load Balanced)
+
+' ==================== API GATEWAY TO SERVICES ====================
+GatewayNode -down-> AccessNode : HTTP\n(REST API)
+GatewayNode -down-> AuthNode : HTTP\n(REST API)
+GatewayNode -down-> HelperNode : HTTP\n(REST API)
+GatewayNode -down-> SearchNode : HTTP\n(REST API)
+GatewayNode -down-> BranchNode : HTTP\n(REST API)
+GatewayNode -down-> MonitorNode : HTTP\n(REST API)
+GatewayNode -down-> MLOpsNode : HTTP\n(REST API)
+
+' ==================== INTER-SERVICE CONNECTIONS ====================
+AccessSvc -right-> FaceModelSvc : IPC/gRPC\n(Same Pod)\n(Local Socket)
+MLOpsSvc -up-> FaceModelSvc : gRPC\n(Model Hot Swap)
+MLOpsSvc -right-> MLEngine : Local\n(Function Call)
+
+' ==================== SERVICE TO DATABASE ====================
+AccessNode -down-> VectorDB : JDBC\n(Connection Pool)
+AuthNode -down-> AuthDB : JDBC\n(Connection Pool)
+HelperNode -down-> HelperDB : JDBC\n(Connection Pool)
+SearchNode -down-> SearchDB : JDBC\n(Connection Pool)
+SearchNode -down-> ES : ES API\n(HTTP)
+BranchNode -down-> BranchDB : JDBC\n(Connection Pool)
+MonitorNode -down-> MonitorDB : JDBC\n(Connection Pool)
+MLOpsNode -down-> ModelDB : JDBC\n(Connection Pool)
+MLOpsNode -down-> TrainingDB : JDBC\n(Connection Pool)
+MLOpsNode -down-> HelperDB : JDBC\n(READ-ONLY)
+MLOpsNode -down-> AuthDB : JDBC\n(READ-ONLY)
+
+' ==================== SERVICE TO MESSAGE BROKER ====================
+AccessNode -down-> MQ : AMQP\n(Publish)
+AuthNode -down-> MQ : AMQP\n(Publish)
+HelperNode -down-> MQ : AMQP\n(Pub/Sub)
+SearchNode -down-> MQ : AMQP\n(Pub/Sub)
+BranchNode -down-> MQ : AMQP\n(Publish)
+MonitorNode -down-> MQ : AMQP\n(Publish)
+NotifyNode -down-> MQ : AMQP\n(Subscribe)
+MLOpsNode -down-> MQ : AMQP\n(Pub/Sub)
+
+' ==================== SERVICE TO CACHE ====================
+GatewayNode -down-> Redis : Redis Protocol\n(Session, Rate Limit)
+AccessNode -down-> Redis : Redis Protocol\n(Face Vector Cache)
+
+' ==================== SERVICE TO S3 ====================
+HelperNode -down-> S3 : HTTPS\n(Photo Upload)
+MLOpsNode -down-> S3 : HTTPS\n(Photo Download)
+AuthNode -down-> S3 : HTTPS\n(Face Image Upload)
+
+' ==================== EXTERNAL SERVICE CONNECTIONS ====================
+AuthNode -up-> CCNode : HTTPS\n(Card Verification)
+SearchNode -up-> LLMNode : HTTPS\n(Cold Path NLP)
+NotifyNode -up-> FCMNode : HTTPS\n(Push Notification)
+FCMNode -up-> ManagerDevice : FCM Push\n(HTTPS)
+
+' ==================== LEGEND ====================
+legend bottom left
+  **Deployment View - Physical Architecture**
+  
+  **Node Types:**
+  • <<device>>: Client devices, Branch equipment
+  • <<cluster>>: Kubernetes cluster
+  • <<application server>>: Microservice nodes (Kubernetes Pods)
+  • <<database cluster>>: Database nodes (RDS, ElasticSearch)
+  • <<load balancer>>: Load balancer node
+  • <<external>>: External service providers
+  
+  **Communication Protocols:**
+  • HTTPS (TLS 1.3): Secure external communication
+  • HTTP: Internal REST APIs
+  • IPC/gRPC: High-performance inter-service (same pod)
+  • AMQP: Asynchronous messaging (RabbitMQ)
+  • JDBC: Database connections (HikariCP pool)
+  • TCP: Equipment heartbeat
+  • Redis Protocol: Cache access
+  
+  **Execution Environments:**
+  • Java 17 + Spring Boot 3.2.x
+  • PostgreSQL 15.x (AWS RDS / GCP Cloud SQL)
+  • ElasticSearch 8.x
+  • RabbitMQ 3.12.x
+  • Redis 7.x
+  • TensorFlow 2.x (AI Pipeline)
+  • Kubernetes (Container Orchestration)
+  
+  **Multiplicity:**
+  • API Gateway: 3 replicas
+  • Access/FaceModel (Co-located): 2 replicas
+  • Business Services: 2-3 replicas each
+  • MLOps: 1-2 replicas (GPU)
+  • RabbitMQ: 3-node cluster
+  • ElasticSearch: 3-node cluster
+  • RDS: 1 primary + 2 read replicas per DB
+  
+  **Key Quality Attributes:**
+  • Performance: Co-located Access + FaceModel (IPC)
+  • Availability: Multi-replica, Load balancing, Circuit breaker
+  • Scalability: Kubernetes auto-scaling (HPA)
+  • Security: TLS encryption, Private subnet for DBs
+end legend
+
+@enduml
+

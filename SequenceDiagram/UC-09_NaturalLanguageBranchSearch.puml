@@ -1,0 +1,193 @@
+@startuml UC09_NaturalLanguageBranchSearch
+title UC-09: 자연어 지점 검색 (Natural Language Branch Search)
+autonumber
+
+' Actors
+actor "Customer\n(Mobile App)" as Customer
+
+' API Gateway
+participant "ApiGateway\n<<API Gateway>>" as Gateway
+
+' Search Service Node - Interface Layer
+box "Search Service Node" #LightCyan
+  participant "BranchSearchController\n<<Interface>>" as Controller
+  participant "SearchQueryManager\n<<Business>>" as QueryManager
+  participant "SimpleKeywordTokenizer\n<<Business>>" as Tokenizer
+  participant "SearchEngineAdapter\n<<Business>>" as SearchAdapter
+  participant "ElasticSearchRepository\n<<System Interface>>" as ESRepo
+end box
+
+database "ElasticSearch DB" as ESDB
+
+== Main Success Scenario - Hot Path (DD-06, DD-09) ==
+
+Customer -> Gateway : GET /search/branches\n?query="넓고 쾌적한 헬스장"
+note right
+  **QAS-03: Real-time Response**
+  Target: 95% < 3초
+  Peak Load: 20 TPS burst
+end note
+
+Gateway -> Controller : <<HTTP>> GET /search/branches\n{query, userId}
+note right
+  **Gateway routing**
+  - Authentication check
+  - Rate limiting
+  - Load balancing
+end note
+
+Controller -> QueryManager : searchBranches(query, userId)
+
+' Step 1: Simple Tokenization (No LLM!)
+QueryManager -> Tokenizer : tokenize(query)
+note left
+  **DD-09: Hot Path Strategy**
+  
+  **NO LLM call in Hot Path!**
+  - Simple keyword extraction
+  - Local processing only
+  - No external API dependency
+  - Guarantees SLA (QAS-03)
+  
+  Example:
+  "넓고 쾌적한 헬스장"
+  → ["넓", "쾌적", "헬스장"]
+end note
+
+Tokenizer --> QueryManager : List<String> keywords
+
+' Step 2: Query ElasticSearch
+QueryManager -> SearchAdapter : searchByKeywords(keywords, userId)
+
+SearchAdapter -> ESRepo : search(keywords)
+note right
+  **DD-06: ElasticSearch**
+  - Full-text search
+  - Relevance scoring
+  - TF-IDF, BM25 algorithm
+  - Query time: ~50ms
+end note
+
+ESRepo -> ESDB : <<ElasticSearch API>>\nPOST /_search\n{\n  "query": {\n    "multi_match": {\n      "query": keywords,\n      "fields": ["name", "description", "reviews"]\n    }\n  }\n}
+
+ESDB --> ESRepo : SearchResponse\n{hits: [...]}
+
+ESRepo --> SearchAdapter : List<BranchDto>
+
+SearchAdapter --> QueryManager : List<BranchDto>
+
+alt Search Results Found
+  ' Step 3: Save customer preference (async)
+  QueryManager -> QueryManager : saveCustomerPreference(userId, query, results)
+  note left
+    **Async preference storage**
+    - Non-blocking operation
+    - Does not delay response
+    - Can be queued if needed
+  end note
+  
+  ' Step 4: Return results to customer
+  QueryManager --> Controller : SearchResultDto\n{branches: [...], count}
+  
+  Controller --> Gateway : HTTP 200 OK\n{branches, count, timestamp}
+  
+  Gateway --> Customer : JSON Response\n{branches: [...]}
+  
+  note over Customer
+    **Performance Achievement**
+    - Tokenization: ~5ms
+    - ElasticSearch query: ~50ms
+    - Total: ~60ms << 3초 ✓
+    
+    **95%ile < 3초 (QAS-03)** ✓
+  end note
+
+else No Search Results (Alternative 3a)
+  ' Alternative 3a: No results found
+  note over QueryManager
+    **Alternative 3a**
+    ElasticSearch returns empty hits
+  end note
+  
+  QueryManager -> QueryManager : saveCustomerPreference(userId, query, [])
+  note left
+    Still save preference
+    for future ML analysis
+  end note
+  
+  QueryManager --> Controller : SearchResultDto\n{branches: [], count: 0, message}
+  
+  Controller --> Gateway : HTTP 200 OK\n{branches: [], message: "검색 결과 없음"}
+  
+  Gateway --> Customer : JSON Response\n{message: "검색 결과 없음"}
+  
+  note right
+    **User Experience**
+    - Clear "no results" message
+    - Suggestion: try different keywords
+    - Log for search quality improvement
+  end note
+end
+
+== QAS-03 Performance Target Achievement ==
+note over Customer, ESDB
+  **QAS-03: 자연어 검색 질의 응답의 실시간성**
+  
+  **Hot Path Strategy (DD-09 Approach 3):**
+  1. **Simple Tokenization** (local): ~5ms
+     - No LLM call (LLM: 500-2000ms)
+     - Rule-based keyword extraction
+     - Eliminates external API latency
+  
+  2. **ElasticSearch Query** (DD-06): ~50ms
+     - Optimized full-text search
+     - Pre-built inverted index
+     - In-memory caching
+  
+  3. **Total Response Time**: ~60ms
+     - 95%ile: < 100ms << 3초 ✓
+     - 99%ile: < 200ms << 3초 ✓
+     - Peak Load (20 TPS): Handled ✓
+  
+  **Performance Tactics Applied:**
+  - **Use an Intermediary** (DD-09): Hot/Cold path separation
+  - **Pipe and Filter** (DD-06): Query pipeline optimization
+  - **IPC** (DD-06): Local ElasticSearch client (no network)
+  
+  **Trade-off:**
+  - Accuracy: Slightly lower than LLM-based search
+  - Speed: 10-40x faster (60ms vs 500-2000ms)
+  - SLA: Guaranteed under all load conditions
+  
+  **Cold Path (UC-10, UC-18):**
+  - LLM analysis for content indexing (async)
+  - Improves search quality over time
+  - Does not impact real-time search performance
+end note
+
+== Additional Notes ==
+note over Controller, SearchAdapter
+  **Why NO LLM in Hot Path?**
+  
+  1. **Latency**: External LLM API: 500-2000ms
+     - Would violate QAS-03 (3초 target)
+     - Network latency + API processing time
+  
+  2. **Availability**: External dependency risk
+     - LLM service outage → search unavailable
+     - Rate limiting, throttling issues
+  
+  3. **Cost**: Per-request LLM API charges
+     - 500 queries/hour × $0.002 = expensive
+  
+  4. **Scalability**: Limited by LLM quota
+     - Cannot handle 20 TPS burst reliably
+  
+  **Solution: Hot/Cold Path Separation**
+  - Hot Path: Fast, simple, reliable (this UC)
+  - Cold Path: Accurate, LLM-powered indexing (UC-10, UC-18)
+  - Best of both worlds!
+end note
+
+@enduml
+

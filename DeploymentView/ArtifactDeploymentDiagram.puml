@@ -1,0 +1,298 @@
+@startuml SmartFitnessArtifactDeploymentDiagram
+!pragma layout smetana
+skinparam componentStyle rectangle
+skinparam nodeStyle rectangle
+skinparam artifactStyle rectangle
+top to bottom direction
+
+title Smart Fitness Management System - Artifact Deployment Diagram
+' 전체 시스템의 노드별 Artifact 배포 및 Execution Environment 관계 (.so 파일 제외)
+
+' ==================== KUBERNETES CLUSTER ====================
+node "Kubernetes Cluster" as K8sCluster <<cluster>> #Azure {
+  
+  ' N-01: Load Balancer
+  node "N-01: Load Balancer" as N01 <<load balancer>> #Lavender {
+    artifact "nginx-ingress-controller.yaml" as A01_Config
+    artifact "ingress-config.yaml" as A01_Ingress
+    artifact "tls-certificates.pem" as A01_Cert
+    node "Nginx Ingress Controller 1.9+" as N01_Env <<executionEnvironment>>
+    
+    A01_Config ..> N01_Env : <<deploy>>
+    A01_Ingress ..> N01_Env : <<deploy>>
+    A01_Cert ..> N01_Env : <<deploy>>
+  }
+  
+  ' N-02: API Gateway
+  node "N-02: API Gateway" as N02 <<application server>> #Lavender {
+    artifact "A-01: APIGateway.jar" as A02_Jar <<manifest>>
+    artifact "A-02: gateway-config.yml" as A02_Config
+    artifact "spring-cloud-gateway-4.1.jar" as A02_Lib1 <<library>>
+    artifact "resilience4j-2.1.0.jar" as A02_Lib2 <<library>>
+    artifact "jwt-public-key.pem" as A02_Cert
+    node "Spring Cloud Gateway 4.1+\nSpring Boot 3.2.x\nJava 17" as N02_Env <<executionEnvironment>>
+    
+    A02_Jar ..> N02_Env : <<deploy>>
+    A02_Config ..> N02_Env : <<deploy>>
+    A02_Jar ..> A02_Lib1 : <<uses>>
+    A02_Jar ..> A02_Lib2 : <<uses>>
+    A02_Cert ..> N02_Env : <<deploy>>
+  }
+  
+  ' N-03: Real-Time Access
+  node "N-03: Real-Time Access" as N03 <<application server>> #LightCyan {
+    artifact "A-03: AccessService.jar" as A03_Jar <<manifest>>
+    artifact "A-04: access-config.yml" as A03_Config
+    artifact "facemodel-service.jar" as A03_FaceJar <<manifest>>
+    artifact "application-facemodel.yml" as A03_FaceConfig
+    artifact "grpc-java-1.58.0.jar" as A03_Grpc <<library>>
+    artifact "lettuce-6.2.jar" as A03_Redis <<library>>
+    node "Spring Boot 3.2.x\ngRPC 1.58+\nJava 17" as N03_Env <<executionEnvironment>>
+    
+    A03_Jar ..> N03_Env : <<deploy>>
+    A03_FaceJar ..> N03_Env : <<deploy>>
+    A03_Config ..> N03_Env : <<deploy>>
+    A03_FaceConfig ..> N03_Env : <<deploy>>
+    A03_Jar ..> A03_FaceJar : <<uses>>
+    A03_Jar ..> A03_Grpc : <<uses>>
+    A03_Jar ..> A03_Redis : <<uses>>
+    A03_FaceJar ..> A03_Grpc : <<uses>>
+  }
+  
+  ' N-04: Auth Service
+  node "N-04: Auth Service" as N04 <<application server>> #LightGreen {
+    artifact "auth-service.jar" as A04_Jar <<manifest>>
+    artifact "application-auth.yml" as A04_Config
+    artifact "spring-security-6.1.jar" as A04_Sec <<library>>
+    artifact "jjwt-0.12.3.jar" as A04_Jwt <<library>>
+    node "Spring Boot 3.2.x\nJava 17" as N04_Env <<executionEnvironment>>
+    
+    A04_Jar ..> N04_Env : <<deploy>>
+    A04_Config ..> N04_Env : <<deploy>>
+    A04_Jar ..> A04_Sec : <<uses>>
+    A04_Jar ..> A04_Jwt : <<uses>>
+  }
+  
+  ' N-05: Helper Service
+  node "N-05: Helper Service" as N05 <<application server>> #LightGreen {
+    artifact "helper-service.jar" as A05_Jar <<manifest>>
+    artifact "application-helper.yml" as A05_Config
+    artifact "aws-s3-sdk-2.20.jar" as A05_S3 <<library>>
+    node "Spring Boot 3.2.x\nJava 17" as N05_Env <<executionEnvironment>>
+    
+    A05_Jar ..> N05_Env : <<deploy>>
+    A05_Config ..> N05_Env : <<deploy>>
+    A05_Jar ..> A05_S3 : <<uses>>
+  }
+  
+  ' N-06: Search Service
+  node "N-06: Search Service" as N06 <<application server>> #LightGreen {
+    artifact "A-05: SearchService.jar" as A06_Jar <<manifest>>
+    artifact "A-06: search-config.yml" as A06_Config
+    artifact "elasticsearch-client-8.10.jar" as A06_ES <<library>>
+    node "Spring Boot 3.2.x\nJava 17" as N06_Env <<executionEnvironment>>
+    
+    A06_Jar ..> N06_Env : <<deploy>>
+    A06_Config ..> N06_Env : <<deploy>>
+    A06_Jar ..> A06_ES : <<uses>>
+  }
+  
+  ' N-07: BranchOwner Service
+  node "N-07: BranchOwner Service" as N07 <<application server>> #LightGreen {
+    artifact "branchowner-service.jar" as A07_Jar <<manifest>>
+    artifact "application-branchowner.yml" as A07_Config
+    node "Spring Boot 3.2.x\nJava 17" as N07_Env <<executionEnvironment>>
+    
+    A07_Jar ..> N07_Env : <<deploy>>
+    A07_Config ..> N07_Env : <<deploy>>
+  }
+  
+  ' N-08: Monitoring Service
+  node "N-08: Monitoring Service" as N08 <<application server>> #LightGreen {
+    artifact "A-10: MonitoringService.jar" as A08_Jar <<manifest>>
+    artifact "A-11: monitoring-config.yml" as A08_Config
+    artifact "quartz-scheduler-2.3.jar" as A08_Quartz <<library>>
+    node "Spring Boot 3.2.x\nJava 17" as N08_Env <<executionEnvironment>>
+    
+    A08_Jar ..> N08_Env : <<deploy>>
+    A08_Config ..> N08_Env : <<deploy>>
+    A08_Jar ..> A08_Quartz : <<uses>>
+  }
+  
+  ' N-09: Notification Service
+  node "N-09: Notification Service" as N09 <<application server>> #LightGreen {
+    artifact "notification-service.jar" as A09_Jar <<manifest>>
+    artifact "application-notification.yml" as A09_Config
+    artifact "firebase-admin-sdk-9.2.jar" as A09_FCM <<library>>
+    artifact "fcm-service-account.json" as A09_Cred
+    node "Spring Boot 3.2.x\nJava 17" as N09_Env <<executionEnvironment>>
+    
+    A09_Jar ..> N09_Env : <<deploy>>
+    A09_Config ..> N09_Env : <<deploy>>
+    A09_Jar ..> A09_FCM : <<uses>>
+    A09_Cred ..> N09_Env : <<deploy>>
+  }
+  
+  ' N-10: MLOps Service
+  node "N-10: MLOps Service" as N10 <<application server>> #LightYellow {
+    artifact "A-07: MLOpsService.whl" as A10_Whl <<manifest>>
+    artifact "A-08: training_scripts/" as A10_Scripts <<manifest>>
+    artifact "A-09: mlops-config.yml" as A10_Config
+    artifact "model-weights-v1.0.pb" as A10_Model
+    artifact "tensorflow-2.13.jar" as A10_TF <<library>>
+    artifact "pytorch-2.1.jar" as A10_PT <<library>>
+    node "Spring Boot 3.2.x\nTensorFlow 2.13+\nCUDA 12.2" as N10_Env <<executionEnvironment>>
+    
+    A10_Whl ..> N10_Env : <<deploy>>
+    A10_Scripts ..> N10_Env : <<deploy>>
+    A10_Config ..> N10_Env : <<deploy>>
+    A10_Model ..> N10_Env : <<deploy>>
+    A10_Whl ..> A10_Scripts : <<uses>>
+    A10_Whl ..> A10_TF : <<uses>>
+    A10_Whl ..> A10_PT : <<uses>>
+  }
+}
+
+K8sCluster -[hidden]down-> DBZone
+
+' ==================== DATABASE ZONE ====================
+cloud "Database Zone" as DBZone #LightBlue {
+  
+  ' N-11: RDS Cluster
+  node "N-11: RDS Cluster" as N11 <<database>> #LightSteelBlue {
+    artifact "A-15: database-schema.sql" as A11_Schema
+    artifact "A-16: initial-data.sql" as A11_Data
+    artifact "ivfflat-index.sql" as A11_Index
+    node "PostgreSQL 15.4\nMulti-AZ\nPrimary + Replica" as N11_Env <<executionEnvironment>>
+    
+    A11_Schema ..> N11_Env : <<deploy>>
+    A11_Data ..> N11_Env : <<deploy>>
+    A11_Data ..> A11_Schema : <<depends on>>
+    A11_Index ..> N11_Env : <<deploy>>
+  }
+  
+  ' N-12: ElasticSearch Cluster
+  node "N-12: ElasticSearch Cluster" as N12 <<database>> #LightSteelBlue {
+    artifact "A-18: branch-index-mapping.json" as A12_Branch
+    artifact "A-19: review-index-mapping.json" as A12_Review
+    artifact "A-20: nori-analyzer-plugin.zip" as A12_Nori
+    artifact "A-21: elasticsearch.yml" as A12_Config
+    artifact "elasticsearch-8.10.tar.gz" as A12_Binary
+    node "ElasticSearch 8.10+\nCluster Mode" as N12_Env <<executionEnvironment>>
+    
+    A12_Branch ..> N12_Env : <<deploy>>
+    A12_Review ..> N12_Env : <<deploy>>
+    A12_Nori ..> N12_Env : <<deploy>>
+    A12_Config ..> N12_Env : <<deploy>>
+    A12_Binary ..> N12_Env : <<deploy>>
+    A12_Branch ..> A12_Nori : <<depends on>>
+    A12_Review ..> A12_Nori : <<depends on>>
+  }
+  
+  ' N-13: RabbitMQ Cluster
+  node "N-13: RabbitMQ Cluster" as N13 <<message broker>> #LightSteelBlue {
+    artifact "rabbitmq-server-3.12.8.tar.gz" as A13_Binary
+    artifact "rabbitmq.conf" as A13_Config
+    artifact "queue-definitions.json" as A13_Queue
+    artifact "exchange-definitions.json" as A13_Exchange
+    artifact "erlang-26.tar.gz" as A13_Erlang
+    node "RabbitMQ 3.12.8\nQuorum Queue\nRaft Consensus" as N13_Env <<executionEnvironment>>
+    
+    A13_Binary ..> N13_Env : <<deploy>>
+    A13_Config ..> N13_Env : <<deploy>>
+    A13_Queue ..> N13_Env : <<deploy>>
+    A13_Exchange ..> N13_Env : <<deploy>>
+    A13_Erlang ..> N13_Env : <<deploy>>
+  }
+  
+  ' N-14: Redis Cache Cluster
+  node "N-14: Redis Cache Cluster" as N14 <<cache>> #LightSteelBlue {
+    artifact "A-17: redis.conf" as A14_Config
+    artifact "redis-server-7.2.tar.gz" as A14_Binary
+    artifact "sentinel.conf" as A14_Sentinel
+    node "Redis 7.2+\nSentinel\nPrimary + Replica" as N14_Env <<executionEnvironment>>
+    
+    A14_Config ..> N14_Env : <<deploy>>
+    A14_Binary ..> N14_Env : <<deploy>>
+    A14_Sentinel ..> N14_Env : <<deploy>>
+  }
+  
+  ' N-15: S3 Storage
+  node "N-15: S3 Storage" as N15 <<storage>> #LightSteelBlue {
+    artifact "A-22: face-recognition-model.h5" as A15_Model
+    artifact "lifecycle-policy.json" as A15_Lifecycle
+    artifact "bucket-policy.json" as A15_BucketPolicy
+    node "AWS S3 / GCP Cloud Storage\n99.99% SLA\n11-nines Durability" as N15_Env <<executionEnvironment>>
+    
+    A15_Model ..> N15_Env : <<deploy>>
+    A15_Lifecycle ..> N15_Env : <<deploy>>
+    A15_BucketPolicy ..> N15_Env : <<deploy>>
+  }
+}
+
+' ==================== ARTIFACT DEPLOYMENT RELATIONSHIPS ====================
+' Model Hot Swap: MLOps → Access Service
+A15_Model ..> A03_FaceJar : <<gRPC Hot Swap>>
+
+' Database Schema Dependencies
+A11_Data ..> A11_Schema : <<depends on>>
+
+' ElasticSearch Index Dependencies
+A12_Branch ..> A12_Nori : <<depends on>>
+A12_Review ..> A12_Nori : <<depends on>>
+
+' Service IPC Communication
+A03_Jar ..> A03_FaceJar : <<IPC call>>
+
+' ==================== SERVICE COMMUNICATION PROTOCOLS ====================
+' Load Balancer to API Gateway
+N01 ..> N02 : HTTP
+
+' API Gateway to Services
+N02 ..> N03 : HTTP
+N02 ..> N04 : HTTP
+N02 ..> N05 : HTTP
+N02 ..> N06 : HTTP
+N02 ..> N07 : HTTP
+N02 ..> N08 : HTTP
+N02 ..> N09 : HTTP
+
+' Access Service to FaceModel Service (Co-located IPC)
+A03_Jar <--> A03_FaceJar : IPC/gRPC
+
+' MLOps Service to Access Service (Model Hot Swap)
+N10 ..> N03 : gRPC
+
+' Services to PostgreSQL
+N03 ..> N11 : JDBC
+N04 ..> N11 : JDBC
+N05 ..> N11 : JDBC
+N06 ..> N11 : JDBC
+N07 ..> N11 : JDBC
+N08 ..> N11 : JDBC
+N09 ..> N11 : JDBC
+N10 ..> N11 : JDBC
+
+' Services to Redis Cache
+N02 ..> N14 : RESP
+N03 ..> N14 : RESP
+
+' Services to RabbitMQ
+N03 <--> N13 : AMQP
+N04 <--> N13 : AMQP
+N05 <--> N13 : AMQP
+N06 <--> N13 : AMQP
+N07 <--> N13 : AMQP
+N08 <--> N13 : AMQP
+N09 <--> N13 : AMQP
+N10 <--> N13 : AMQP
+
+' Search Service to ElasticSearch
+N06 ..> N12 : HTTP (ES API)
+
+' Services to S3 Storage
+N04 ..> N15 : HTTPS (S3 API)
+N05 ..> N15 : HTTPS (S3 API)
+N10 ..> N15 : HTTPS (S3 API)
+
+@enduml

@@ -1,0 +1,113 @@
+@startuml UC24_LaundryModelRetraining
+title UC-24: 세탁물 모델 재학습 (Laundry Model Retraining)
+autonumber
+
+' Actors
+actor "Branch Manager\n(Mobile App)" as Manager
+
+' Helper Service (Trigger)
+box "Helper Service Node" #LightCyan
+  participant "TaskController\n<<Interface>>" as TaskController
+  participant "RewardConfirmationManager\n<<Business>>" as RewardMgr
+  participant "RabbitMQAdapter\n<<System Interface>>" as HelperMQ
+end box
+
+queue "RabbitMQ Broker" as Broker
+
+' MLOps Service Node (Simplified)
+box "MLOps Service Node" #LightGreen
+  participant "TrainingManager\n<<Business>>" as TrainingMgr
+  participant "TrainingPipelineOrchestrator\n<<Business>>" as Pipeline
+  participant "ModelVerificationService\n<<Business>>" as Verifier
+  participant "DeploymentService\n<<Business>>" as Deployer
+  participant "MLInferenceEngineAdapter\n<<System Interface>>" as MLEngine
+  participant "RabbitMQAdapter\n<<System Interface>>" as MLOpsMQ
+end box
+
+database "Helper Service DB" as HelperDB
+database "Training Data Store" as TrainingDB
+database "Model Database" as ModelDB
+
+' FaceModel Service (Deployment Target)
+box "FaceModel Service Node" #LightYellow
+  participant "ModelLifecycleManager\n<<Business>>" as LifecycleMgr
+end box
+
+== Trigger: UC-14 Task Confirmation with Correction ==
+
+' Step 1: Branch Manager confirms task (from UC-14)
+Manager -> TaskController : POST /helper/tasks/{taskId}/confirm\n{finalResult: "양호", corrected: true, \n correctionReason: "AI가 놓친 얼룩"}
+
+TaskController -> RewardMgr : confirmTask(taskId, finalResult, corrected)
+
+' Step 2: Save confirmation and publish event
+RewardMgr -> RewardMgr : saveTaskConfirmation(taskId, finalResult)
+
+RewardMgr -> HelperMQ : publish(TaskConfirmedEvent)
+HelperMQ -> Broker : <<AMQP>> TaskConfirmedEvent
+
+== Main Success Scenario - Model Retraining ==
+
+' Step 3: MLOps subscribes to event
+Broker -> TrainingMgr : <<AMQP>> TaskConfirmedEvent
+
+TrainingMgr -> TrainingMgr : checkRetrainingCondition(event)
+
+alt Retraining NOT Needed
+  TrainingMgr -> TrainingMgr : storeForFutureTraining(event)
+  TrainingMgr --> Broker : ACK (no action)
+
+else Retraining Needed (Main Scenario)
+  ' Step 4: Trigger retraining pipeline
+  TrainingMgr -> Pipeline : triggerRetraining(modelType: "LAUNDRY")
+  
+  ' Step 5-7: Collect & prepare training data
+  Pipeline -> HelperDB : <<JDBC READ-ONLY>>\nSELECT corrected tasks
+  HelperDB --> Pipeline : 150 corrected tasks
+  
+  Pipeline -> TrainingDB : <<JDBC>> Save training dataset
+  TrainingDB --> Pipeline : datasetId
+  
+  ' Step 8: Execute model training
+  Pipeline -> MLEngine : trainModel(datasetId, modelType, hyperparams)
+  MLEngine -> MLEngine : executeTraining()
+  MLEngine --> Pipeline : TrainingResult\n{modelVersion: "v2.3.5", accuracy: 0.92}
+  
+  ' Step 9: Verify new model
+  Pipeline -> Verifier : verifyModel(modelVersion)
+  Verifier --> Pipeline : VerificationResult{approved: true}
+  
+  alt Verification Failed
+    Pipeline -> MLOpsMQ : publish(ModelVerificationFailedEvent)
+    Pipeline --> TrainingMgr : retrainingFailed
+    
+  else Verification Passed (Main Scenario)
+    ' Step 10: Deploy model
+    Pipeline -> Deployer : deployModel(modelVersion)
+    
+    Deployer -> ModelDB : <<JDBC>> INSERT INTO model_versions\n(version, accuracy, status, deployed_at)
+    ModelDB --> Deployer : saved
+    
+    ' Step 11: Deploy to MLInferenceEngine
+    Deployer -> MLEngine : deployModel(modelVersion)
+    MLEngine --> Deployer : deploymentSuccess
+    
+    ' Step 12: Hot Swap to FaceModel Service (QAS-06)
+    Deployer -> LifecycleMgr : <<gRPC>> updateModel(modelVersion)
+    LifecycleMgr -> LifecycleMgr : loadAndSwapModel(modelVersion)
+    LifecycleMgr --> Deployer : <<gRPC>> updateSuccess
+    
+    ' Step 13: Publish deployment event
+    Deployer -> MLOpsMQ : publish(ModelDeployedEvent)
+    MLOpsMQ -> Broker : <<AMQP>> ModelDeployedEvent
+    
+    Deployer --> Pipeline : deploymentSuccess
+    Pipeline --> TrainingMgr : retrainingComplete
+    
+    TrainingMgr --> Broker : ACK (retraining complete)
+  end
+end
+
+
+@enduml
+
