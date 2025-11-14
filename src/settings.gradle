@@ -1,0 +1,25 @@
+rootProject.name = 'smart-fitness-system'
+
+include 'common'
+include 'api-gateway-service'
+include 'auth-service'
+include 'access-service'
+include 'facemodel-service'
+include 'helper-service'
+include 'search-service'
+include 'branchowner-service'
+include 'monitoring-service'
+include 'notification-service'
+include 'mlops-service'
+
+project(':common').projectDir = file('common')
+project(':api-gateway-service').projectDir = file('api-gateway-service')
+project(':auth-service').projectDir = file('auth-service')
+project(':access-service').projectDir = file('access-service')
+project(':facemodel-service').projectDir = file('facemodel-service')
+project(':helper-service').projectDir = file('helper-service')
+project(':search-service').projectDir = file('search-service')
+project(':branchowner-service').projectDir = file('branchowner-service')
+project(':monitoring-service').projectDir = file('monitoring-service')
+project(':notification-service').projectDir = file('notification-service')
+project(':mlops-service').projectDir = file('mlops-service')

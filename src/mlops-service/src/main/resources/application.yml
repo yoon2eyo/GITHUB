@@ -1,0 +1,64 @@
+server:
+  port: 8089
+
+spring:
+  application:
+    name: mlops-service
+  
+  datasource:
+    url: jdbc:mysql://localhost:3306/mlops_db
+    username: root
+    password: password
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+  
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+
+# Eureka Client
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+    register-with-eureka: true
+    fetch-registry: true
+  instance:
+    prefer-ip-address: true
+
+# DD-03 Exception: READ-ONLY Access Configuration
+training-data:
+  auth-db:
+    url: jdbc:mysql://localhost:3306/auth_db
+    username: readonly_user
+    password: readonly_pass
+  helper-db:
+    url: jdbc:mysql://localhost:3306/helper_db
+    username: readonly_user
+    password: readonly_pass
+
+# DD-05: Model Lifecycle Configuration
+model:
+  inference-engine:
+    endpoint: http://localhost:9090
+  deployment:
+    hot-swap-enabled: true
+  verification:
+    accuracy-threshold: 0.95
+    performance-threshold-ms: 100
+
+# Logging
+logging:
+  level:
+    com.smartfitness.mlops: DEBUG
+    org.springframework.amqp: INFO
+

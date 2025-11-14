@@ -1,0 +1,49 @@
+server:
+  port: 8085
+
+spring:
+  application:
+    name: search-service
+  
+  elasticsearch:
+    uris: http://localhost:9200
+    username: elastic
+    password: password
+  
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+
+# Eureka Client
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+    register-with-eureka: true
+    fetch-registry: true
+  instance:
+    prefer-ip-address: true
+
+# External LLM Service Configuration (Stub)
+llm:
+  service:
+    url: https://api.openai.com/v1/completions
+    api-key: ${LLM_API_KEY:sk-stub-key}
+
+# DD-07: Peak Time Configuration
+search:
+  peak-time:
+    start: 09:00
+    end: 21:00
+  scheduling:
+    enabled: true
+
+# Logging
+logging:
+  level:
+    com.smartfitness.search: DEBUG
+    org.springframework.data.elasticsearch: INFO
+    org.springframework.amqp: INFO
+

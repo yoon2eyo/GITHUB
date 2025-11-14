@@ -1,0 +1,54 @@
+server:
+  port: 8084
+
+spring:
+  application:
+    name: helper-service
+  
+  datasource:
+    url: jdbc:mysql://localhost:3306/helper_db
+    username: root
+    password: password
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+  
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+
+# Eureka Client
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+    register-with-eureka: true
+    fetch-registry: true
+  instance:
+    prefer-ip-address: true
+
+# AWS S3 Configuration (Stub)
+aws:
+  s3:
+    bucket: smart-fitness-tasks
+    region: ap-northeast-2
+
+# ML Inference Engine Configuration (Stub)
+ml:
+  inference:
+    endpoint: http://localhost:9090
+
+# Logging
+logging:
+  level:
+    com.smartfitness.helper: DEBUG
+    org.springframework.amqp: INFO
+

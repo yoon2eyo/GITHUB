@@ -1,0 +1,17 @@
+dependencies {
+    implementation project(':common')
+    
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-amqp'
+    implementation 'org.springframework.cloud:spring-cloud-starter-netflix-eureka-client:4.1.0'
+    implementation 'io.grpc:grpc-netty-shaded:1.60.0'
+    implementation 'io.grpc:grpc-protobuf:1.60.0'
+    implementation 'io.grpc:grpc-stub:1.60.0'
+    
+    runtimeOnly 'org.postgresql:postgresql'
+    
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+}
+

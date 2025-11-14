@@ -1,0 +1,64 @@
+spring:
+  application:
+    name: facemodel-service
+  
+  datasource:
+    url: jdbc:postgresql://localhost:5432/facemodel_db
+    username: postgres
+    password: postgres
+    driver-class-name: org.postgresql.Driver
+  
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+  
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+    register-with-eureka: true
+    fetch-registry: true
+
+server:
+  port: 8083
+
+# DD-05: IPC/gRPC configuration (co-located with Access Service)
+grpc:
+  server:
+    port: 9093
+  client:
+    ml-inference-engine:
+      address: static://localhost:9094
+      negotiation-type: plaintext
+
+# QAS-06: Hot Swap configuration
+model:
+  hot-swap:
+    enabled: true
+    rollback-on-failure: true
+    health-check-interval-seconds: 30
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    com.smartfitness.facemodel: DEBUG
+    java.util.concurrent: INFO
+
