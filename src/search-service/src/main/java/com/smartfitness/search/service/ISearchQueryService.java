@@ -9,5 +9,10 @@ import java.util.Map;
  */
 public interface ISearchQueryService {
     List<Map<String, Object>> search(String query, String userLocation);
+    
+    /**
+     * Search with customer ID for Cold Path event publishing (DD-09)
+     */
+    List<Map<String, Object>> search(String query, String userLocation, String customerId);
 }
 
