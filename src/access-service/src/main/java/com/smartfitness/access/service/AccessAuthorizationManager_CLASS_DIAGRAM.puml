@@ -1,0 +1,143 @@
+@startuml AccessAuthorizationManager_ClassDiagram
+title AccessAuthorizationManager 컴포넌트 Class Diagram
+skinparam backgroundColor #FEFEFE
+skinparam componentStyle rectangle
+
+' Business Layer (모든 컴포넌트 포함)
+' Provided Interface
+interface "IAccessAuthorizationService" as IAccessAuthorizationService {
+  +authorizeFaceAccess(branchId: String, equipmentId: String, facePhoto: MultipartFile): Map<String, Object>
+  +authorizeQRAccess(branchId: String, equipmentId: String, qrCode: String): Map<String, Object>
+  +controlGate(equipmentId: String, action: String): boolean
+}
+
+' Main Component (Facade Pattern - 분홍색)
+class "AccessAuthorizationManager" as AccessAuthorizationManager #FFB6C1 {
+  -faceVectorCache: FaceVectorCache
+  -gateControlService: IGateControlService
+  -faceModelServiceClient: IFaceModelServiceClient
+  -accessEventPublisher: IAccessEventPublisher
+  -SIMILARITY_THRESHOLD: double = 0.85
+  +authorizeFaceAccess(branchId: String, equipmentId: String, facePhoto: MultipartFile): Map<String, Object>
+  +authorizeQRAccess(branchId: String, equipmentId: String, qrCode: String): Map<String, Object>
+  +controlGate(equipmentId: String, action: String): boolean
+  -createDeniedResponse(branchId: String, equipmentId: String, reason: String, score: Double, startTime: long): Map<String, Object>
+  -extractUserIdFromQR(qrCode: String): String
+}
+
+' Required Interfaces (Strategy Pattern - 초록색)
+interface "IGateControlService" as IGateControlService #90EE90 {
+  +openGate(equipmentId: String): boolean
+  +closeGate(equipmentId: String): boolean
+}
+
+interface "IAccessEventPublisher" as IAccessEventPublisher #90EE90 {
+  +publishAccessGranted(event: AccessGrantedEvent): void
+  +publishAccessDenied(event: AccessDeniedEvent): void
+}
+
+' Implementation Classes (Strategy Pattern - 초록색)
+class "GateController" as GateController #90EE90 {
+  +openGate(equipmentId: String): boolean
+  +closeGate(equipmentId: String): boolean
+}
+
+class "AccessEventProcessor" as AccessEventProcessor #90EE90 {
+  +publishAccessGranted(event: AccessGrantedEvent): void
+  +publishAccessDenied(event: AccessDeniedEvent): void
+}
+
+' Required Interfaces (Strategy Pattern - 노란색)
+interface "IFaceModelServiceClient" as IFaceModelServiceClient #FFFF99 {
+  +calculateSimilarity(requestedPhoto: byte[], storedVector: FaceVectorDto): SimilarityResultDto
+}
+
+' Implementation Classes (Strategy Pattern - 노란색)
+class "FaceModelServiceIPCClient" as FaceModelServiceIPCClient #FFFF99 {
+  +calculateSimilarity(requestedPhoto: byte[], storedVector: FaceVectorDto): SimilarityResultDto
+}
+
+' Cache Component (Cache-Aside Pattern - 파란색)
+class "FaceVectorCache" as FaceVectorCache #87CEEB {
+  -vectorRepository: IAccessVectorRepository
+  -cache: Map<String, FaceVectorDto>
+  -MAX_CACHE_SIZE: int = 10000
+  -TTL_HOURS: long = 24
+  +getActiveVector(branchId: String): FaceVectorDto
+  +warmUpCache(): void
+  +refreshCache(): void
+  -evictExpiredEntries(): void
+}
+
+' Relationships
+AccessAuthorizationManager ..|> IAccessAuthorizationService : implements
+
+AccessAuthorizationManager --> FaceVectorCache : uses
+AccessAuthorizationManager --> IGateControlService : uses
+AccessAuthorizationManager --> IFaceModelServiceClient : uses
+AccessAuthorizationManager --> IAccessEventPublisher : uses
+
+IGateControlService <|.. GateController : implements
+IAccessEventPublisher <|.. AccessEventProcessor : implements
+IFaceModelServiceClient <|.. FaceModelServiceIPCClient : implements
+
+FaceVectorCache --> IAccessVectorRepository : uses
+
+' External Dependencies (Common DTOs/Events)
+class "FaceVectorDto" as FaceVectorDto
+class "SimilarityResultDto" as SimilarityResultDto
+class "AccessGrantedEvent" as AccessGrantedEvent
+class "AccessDeniedEvent" as AccessDeniedEvent
+
+FaceModelServiceIPCClient --> FaceVectorDto : uses
+FaceModelServiceIPCClient --> SimilarityResultDto : returns
+AccessEventProcessor --> AccessGrantedEvent : uses
+AccessEventProcessor --> AccessDeniedEvent : uses
+
+' Notes
+note right of AccessAuthorizationManager
+  **Facade Pattern (분홍색)**
+  - AccessAuthorizationManager가 복잡한 출입 인증 프로세스를
+    단순한 인터페이스로 제공
+  - 클라이언트는 내부 복잡성 모름
+
+  **DD-05 Pipeline Optimization:**
+  - Data Pre-Fetching (캐시)
+  - Same Physical Node (IPC)
+  - Parallel Processing (FaceModel)
+end note
+
+note right of GateController
+  **Strategy Pattern (초록색)**
+  - IGateControlService 인터페이스로 다양한 게이트 제어 전략 교체 가능
+  - GRASP: Low Coupling, High Cohesion
+end note
+
+note right of FaceModelServiceIPCClient
+  **Strategy Pattern (노란색)**
+  - IFaceModelServiceClient 인터페이스로 다양한 안면 인식 서비스 전략 교체 가능
+  - DD-05: Same Physical Node tactic 적용
+end note
+
+note right of FaceVectorCache
+  **Cache-Aside Pattern (파란색)**
+  - 인메모리 캐시로 DB I/O 제거
+  - DD-05: Data Pre-Fetching tactic 적용
+  - Thread-safe: ConcurrentHashMap
+end note
+
+legend right
+  **Design Patterns (색상 구분):**
+  - **Facade Pattern (분홍색)**: AccessAuthorizationManager
+  - **Strategy Pattern (초록색)**: IGateControlService, IAccessEventPublisher, GateController, AccessEventProcessor
+  - **Strategy Pattern (노란색)**: IFaceModelServiceClient, FaceModelServiceIPCClient
+  - **Cache-Aside Pattern (파란색)**: FaceVectorCache
+
+  **Quality Attributes:**
+  - **QAS-02 (Performance)**: Data Pre-Fetching, Same Physical Node
+  - **QAS-06 (Modifiability)**: SOLID 원칙 준수, Strategy Pattern
+  - **QAS-05 (Availability)**: 이벤트 기반 아키텍처
+end legend
+
+@enduml
+

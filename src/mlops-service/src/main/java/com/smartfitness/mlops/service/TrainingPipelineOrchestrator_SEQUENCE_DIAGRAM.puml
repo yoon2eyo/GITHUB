@@ -1,0 +1,85 @@
+@startuml TrainingPipelineOrchestrator_SequenceDiagram
+title TrainingPipelineOrchestrator 컴포넌트 시퀀스 다이어그램
+
+' External Caller
+participant "TrainingManager" as Trigger
+
+' TrainingPipelineOrchestrator Component
+box "TrainingPipelineOrchestrator Component" #LightBlue
+  participant "TrainingPipelineOrchestrator" as Orchestrator
+end box
+
+' Required Interfaces
+box "Required Interfaces" #LightGreen
+  participant "IDataManagementService" as DataService
+  participant "IModelVerificationService" as VerificationService
+  participant "IModelDeploymentService" as DeploymentService
+  participant "IMessagePublisherService" as MessagePublisher
+end box
+
+== AI 모델 학습 파이프라인 오케스트레이션 (DD-07) ==
+
+' Step 1: Provided Interface 호출
+Trigger -> Orchestrator : [1.1] orchestrateTraining(trainingId)
+activate Orchestrator
+
+' Step 2: Required Interface 호출 - 데이터 수집
+Orchestrator -> DataService : [1.2] collectTrainingData()
+activate DataService
+DataService --> Orchestrator : [1.2] void
+deactivate DataService
+
+' Step 3: 내부 처리 - 모델 학습
+Orchestrator -> Orchestrator : [1.3] trainModel(trainingData)
+
+' Step 4: Required Interface 호출 - 모델 검증
+Orchestrator -> VerificationService : [1.4] verifyModel(modelId)
+activate VerificationService
+VerificationService --> Orchestrator : [1.4] boolean isVerified
+deactivate VerificationService
+
+' Step 5: 조건부 배포
+alt [isVerified == true] 검증 성공 - Hot Swap 배포
+  ' Step 5-1: Required Interface 호출 - 모델 배포
+  Orchestrator -> DeploymentService : [1.5] deployModel(modelId)
+  activate DeploymentService
+  DeploymentService --> Orchestrator : [1.5] String deploymentId
+  deactivate DeploymentService
+
+  ' Step 5-2: Required Interface 호출 - 이벤트 발행
+  Orchestrator -> MessagePublisher : [1.6] publishEvent(TrainingCompletedEvent)
+  activate MessagePublisher
+  MessagePublisher --> Orchestrator : [1.6] void
+  deactivate MessagePublisher
+
+  Orchestrator --> Trigger : [1.1] void (성공)
+else [isVerified == false] 검증 실패 - 배포 중단
+  Orchestrator --> Trigger : [1.1] void (검증 실패)
+end
+
+deactivate Orchestrator
+
+== Design Pattern & Tactics 요약 ==
+note over Trigger, MessagePublisher
+  **TrainingPipelineOrchestrator 컴포넌트의 핵심 설계 요소**
+
+  **1. Saga Pattern (DD-07)**
+  - 4단계 파이프라인: 데이터 수집 → 모델 학습 → 모델 검증 → Hot Swap 배포
+  - 각 단계별 트랜잭션 관리로 부분 실패 시 자동 롤백
+  - 검증 실패 시 배포 단계 생략으로 품질 보장
+
+  **2. Strategy Pattern**
+  - 각 단계별 전략 교체 가능: IDataManagementService, IModelVerificationService, IModelDeploymentService
+  - Hot Swap 배포 전략으로 무중단 업데이트
+
+  **3. Observer Pattern**
+  - IMessagePublisherService를 통한 이벤트 기반 통신
+  - 느슨한 결합으로 컴포넌트 독립성 유지
+
+  **Quality Attributes:**
+  - QAS-06: 무중단 모델 배포 (Hot Swap)
+  - QAS-02: GPU 리소스 최적화
+  - QAS-05: 가용성 (99.9%)
+end note
+
+@enduml

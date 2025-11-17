@@ -1,0 +1,221 @@
+@startuml SearchQueryManager_ClassDiagram
+title SearchQueryManager 컴포넌트 Class Diagram
+skinparam backgroundColor #FEFEFE
+skinparam componentStyle rectangle
+
+' Interface Layer
+package "Interface Layer" #LightBlue {
+  interface IBranchSearchApi {
+    +searchBranches(query: String, userLocation: String): ResponseEntity<List<Map<String, Object>>>
+  }
+  
+  class BranchSearchController {
+    -searchQueryService: ISearchQueryService
+    +searchBranches(query: String, userLocation: String): ResponseEntity<List<Map<String, Object>>>
+  }
+  
+  IBranchSearchApi <|.. BranchSearchController : implements
+}
+
+' Business Layer
+package "Business Layer" #LightGreen {
+  ' Provided Interface
+  interface ISearchQueryService {
+    +search(query: String, userLocation: String): List<Map<String, Object>>
+    +search(query: String, userLocation: String, customerId: String): List<Map<String, Object>>
+  }
+  
+  ' Main Component (Facade Pattern - 분홍색)
+  class SearchQueryManager <<Main>> #FFB6C1 {
+    -queryTokenizer: IQueryTokenizer
+    -messagePublisherService: IMessagePublisherService
+    +search(query: String, userLocation: String): List<Map<String, Object>>
+    +search(query: String, userLocation: String, customerId: String): List<Map<String, Object>>
+  }
+  
+  ' Required Interfaces (Strategy Pattern - 초록색)
+  interface IQueryTokenizer #90EE90 {
+    +tokenize(query: String): List<String>
+  }
+  
+  interface ISearchEngineClient #90EE90 {
+    +query(keywords: List<String>, location: String): List<Map<String, Object>>
+    +index(documentId: String, document: Map<String, Object>): void
+  }
+  
+  ' Implementations (Strategy Pattern - 초록색)
+  class SimpleKeywordTokenizer #90EE90 {
+    -searchEngineClient: ISearchEngineClient
+    -STOPWORDS: List<String>
+    +tokenize(query: String): List<String>
+  }
+  
+  ' Adapter Pattern (노란색)
+  class SearchEngineAdapter #FFFFE0 {
+    -searchEngineRepository: ISearchEngineRepository
+    +query(keywords: List<String>, location: String): List<Map<String, Object>>
+    +index(documentId: String, document: Map<String, Object>): void
+  }
+  
+  ' Cold Path Component (Observer Pattern - 하늘색)
+  class SearchQueryImprovementConsumer #E0F6FF {
+    -llmAnalysisServiceClient: ILLMAnalysisServiceClient
+    -searchEngineRepository: ISearchEngineRepository
+    -messageSubscriptionService: IMessageSubscriptionService
+    +subscribeToSearchQueryEvent(): void
+    +handleSearchQueryEvent(event: SearchQueryEvent): void
+    -shouldProcessQuery(event: SearchQueryEvent): boolean
+    -updateSearchIndex(query: String, keywords: List<String>): void
+  }
+  
+  ' Relationships
+  ISearchQueryService <|.. SearchQueryManager : implements
+  IQueryTokenizer <|.. SimpleKeywordTokenizer : implements
+  ISearchEngineClient <|.. SearchEngineAdapter : implements
+  
+  SearchQueryManager --> IQueryTokenizer : uses
+  SearchQueryManager --> IMessagePublisherService : uses
+  SimpleKeywordTokenizer --> ISearchEngineClient : uses
+  SearchEngineAdapter --> ISearchEngineRepository : uses
+  SearchQueryImprovementConsumer --> ILLMAnalysisServiceClient : uses
+  SearchQueryImprovementConsumer --> ISearchEngineRepository : uses
+  SearchQueryImprovementConsumer --> IMessageSubscriptionService : uses
+}
+
+' System Interface Layer
+package "System Interface Layer" #LightYellow {
+  interface IMessagePublisherService {
+    +publishEvent(event: DomainEvent): void
+  }
+  
+  interface IMessageSubscriptionService {
+    +subscribe(eventType: String, consumer: Object): void
+    +unsubscribe(eventType: String): void
+  }
+  
+  interface ISearchEngineRepository {
+    +search(keywords: List<String>, location: String): List<Map<String, Object>>
+    +index(documentId: String, document: Map<String, Object>): void
+  }
+  
+  interface ILLMAnalysisServiceClient {
+    +extractKeywords(query: String): Map<String, Object>
+  }
+  
+  ' Adapter Pattern (노란색)
+  class RabbitMQAdapter #FFFFE0 {
+    +publishEvent(event: DomainEvent): void
+    +subscribe(eventType: String, consumer: Object): void
+    +unsubscribe(eventType: String): void
+  }
+  
+  class ElasticSearchRepository {
+    +search(keywords: List<String>, location: String): List<Map<String, Object>>
+    +index(documentId: String, document: Map<String, Object>): void
+  }
+  
+  class LLMServiceClient {
+    +extractKeywords(content: String): Map<String, Object>
+  }
+  
+  ' Relationships
+  IMessagePublisherService <|.. RabbitMQAdapter : implements
+  IMessageSubscriptionService <|.. RabbitMQAdapter : implements
+  ISearchEngineRepository <|.. ElasticSearchRepository : implements
+  ILLMAnalysisServiceClient <|.. LLMServiceClient : implements
+}
+
+' Domain Event
+package "Domain Event" #LightCyan {
+  interface DomainEvent {
+    +getEventId(): String
+    +getEventType(): String
+    +getOccurredAt(): Instant
+    +getAggregateId(): String
+  }
+  
+  ' Observer Pattern (Event - 하늘색)
+  class SearchQueryEvent #E0F6FF {
+    -eventId: String
+    -eventType: String
+    -occurredAt: Instant
+    -query: String
+    -customerId: String
+    -resultCount: int
+    +getQuery(): String
+    +getCustomerId(): String
+    +getResultCount(): int
+    +getEventId(): String
+    +getEventType(): String
+    +getOccurredAt(): Instant
+    +getAggregateId(): String
+  }
+  
+  DomainEvent <|.. SearchQueryEvent : implements
+}
+
+' Cross-layer relationships
+BranchSearchController --> ISearchQueryService : uses
+SearchQueryManager ..> SearchQueryEvent : creates
+SearchQueryImprovementConsumer ..> SearchQueryEvent : consumes
+
+' Notes
+note right of SearchQueryManager
+  **Hot Path (UC-09)**
+  - Real-time search query processing
+  - NO LLM call → SLA guaranteed (< 3초)
+  - QAS-03: 95% < 3초
+  
+  **Flow:**
+  1. Tokenize query (IQueryTokenizer)
+  2. Query SearchEngine (ISearchEngineClient)
+  3. Return results
+  4. Publish SearchQueryEvent for Cold Path
+end note
+
+note right of SearchQueryImprovementConsumer
+  **Cold Path (DD-09)**
+  - Async search query improvement
+  - LLM analysis for index improvement
+  - 10% sampling for cost efficiency
+  
+  **Flow:**
+  1. Subscribe to SearchQueryEvent
+  2. Call LLM Service (ILLMAnalysisServiceClient)
+  3. Update ElasticSearch index
+  4. Improve future search accuracy
+end note
+
+note bottom of SimpleKeywordTokenizer
+  **Hot Path Tokenizer**
+  - Simple, FAST keyword extraction
+  - NO LLM call
+  - Split by whitespace, remove stopwords
+  - Ensures < 3초 response time
+end note
+
+note bottom of SearchEngineAdapter
+  **Search Engine Adapter**
+  - Hot Path: Real-time search queries
+  - Cold Path: Async indexing
+  - Adapts ElasticSearch operations
+end note
+
+legend right
+  **Design Patterns (색상 구분):**
+  - **Facade Pattern (분홍색)**: SearchQueryManager
+  - **Strategy Pattern (초록색)**: IQueryTokenizer, ISearchEngineClient, SimpleKeywordTokenizer
+  - **Adapter Pattern (노란색)**: SearchEngineAdapter, RabbitMQAdapter
+  - **Observer Pattern (하늘색)**: SearchQueryEvent, SearchQueryImprovementConsumer
+  
+  **Hot/Cold Path Separation (DD-09):**
+  - **Hot Path**: SearchQueryManager → SimpleKeywordTokenizer → SearchEngineAdapter
+  - **Cold Path**: SearchQueryEvent → SearchQueryImprovementConsumer → LLM → Index Update
+  
+  **Quality Attributes:**
+  - QAS-03: Real-time search (< 3초)
+  - QAS-02: Performance optimization
+end legend
+
+@enduml
+

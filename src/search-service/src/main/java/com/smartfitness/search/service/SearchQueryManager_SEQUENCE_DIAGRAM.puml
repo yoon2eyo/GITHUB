@@ -1,0 +1,137 @@
+@startuml SearchQueryManager_SequenceDiagram
+title SearchQueryManager 컴포넌트 시퀀스 다이어그램
+
+' External Caller
+participant "BranchSearchController" as Controller
+
+' SearchQueryManager Component
+box "SearchQueryManager Component" #LightBlue
+  participant "SearchQueryManager" as SearchManager
+  participant "SimpleKeywordTokenizer" as SimpleTokenizer
+  participant "SearchEngineAdapter" as SearchAdapter
+end box
+
+' Required Interfaces
+box "Required Interfaces" #LightGreen
+  participant "ISearchEngineRepository" as SearchRepo
+  participant "ElasticSearchRepository" as ElasticRepo
+end box
+
+== 자연어 지점 검색 시나리오 (UC-09) ==
+
+' Step 1: Provided Interface 호출
+Controller -> SearchManager : [1] search(query, userLocation, customerId?)
+activate SearchManager
+note right
+  **Provided Interface:**
+  ISearchQueryService.search()
+  
+  **시작점:** 외부 Controller로부터 호출
+  **Design Pattern:** Facade Pattern
+  - 복잡한 검색 프로세스를
+    단순한 인터페이스로 제공
+  - 클라이언트는 내부 복잡성 모름
+end note
+
+' Step 2: Internal Component 호출 - 쿼리 토큰화
+SearchManager -> SimpleTokenizer : [2] tokenize(query)
+activate SimpleTokenizer
+note right
+  **SimpleKeywordTokenizer**
+  **Component 내부 클래스**
+  **Strategy Pattern 적용**
+  - 다양한 토큰화 전략 교체 가능
+  - Hot Path: SimpleKeywordTokenizer 사용
+  
+  **Hot Path 최적화:**
+  - LLM 호출 없이 빠른 키워드 추출
+  - 공백 분리 및 불용어 제거
+  - 처리 시간: < 10ms
+  - 외부 의존성 제거
+  
+  **QAS-03 (Real-Time Performance):**
+  - LLM 호출 제거로 응답 시간 보장
+  - 핵심 성능 최적화 요소
+end note
+SimpleTokenizer --> SearchManager : [2] List<String> tokens
+deactivate SimpleTokenizer
+
+' Step 3: Internal Component 호출 - ElasticSearch 검색
+SearchManager -> SearchAdapter : [3] query(tokens, userLocation)
+activate SearchAdapter
+note right
+  **SearchEngineAdapter**
+  **Component 내부 클래스**
+  **Adapter Pattern 적용**
+  - ElasticSearch API를 Business Layer
+    인터페이스로 어댑팅
+  - 검색 엔진 변경 시 어댑터만 수정
+  - Strategy Pattern 적용으로
+    다양한 검색 엔진 전략 교체 가능
+end note
+
+SearchAdapter -> SearchRepo : search(tokens, userLocation)
+activate SearchRepo
+SearchRepo -> ElasticRepo : search(tokens, userLocation)
+activate ElasticRepo
+note left
+  **ElasticSearchRepository**
+  **Hot Path 최적화:**
+  - 인덱싱된 데이터를 통한 빠른 검색
+  - 거리 기반 필터링 및 랭킹
+  - 평균 검색 시간: < 500ms
+  
+  **QAS-03 (Real-Time Performance):**
+  - 전문 검색 엔진 활용
+  - RDB LIKE 검색 대비 10-100배 빠름
+end note
+ElasticRepo --> SearchRepo : List<Map<String, Object>> results
+deactivate ElasticRepo
+SearchRepo --> SearchAdapter : List<Map<String, Object>> results
+deactivate SearchRepo
+SearchAdapter --> SearchManager : List<Map<String, Object>> results
+deactivate SearchAdapter
+
+' Step 4: 결과 반환 준비
+note over SearchManager
+  **Hot Path 완료**
+  - 검색 결과 준비 완료
+  - 총 처리 시간: ~530ms
+  - 목표 3초의 17.7%
+  - QAS-03 SLA 보장
+end note
+
+' Step 4: 결과 반환
+SearchManager --> Controller : [4] List<Map<String, Object>> results
+note right
+  **Hot Path 완료**
+  - 검색 결과 반환
+  - 평균 응답 시간: ~530ms
+  - QAS-03: 95% < 3초 목표 달성
+end note
+deactivate SearchManager
+
+
+== Design Pattern & Tactics 요약 ==
+note over Controller, RabbitMQ
+  **SearchQueryManager 컴포넌트의 핵심 설계 요소**
+
+  **1. 실시간성 최적화 (QAS-03)**
+  - **Simple Tokenization**: LLM 없이 빠른 키워드 추출 (< 10ms)
+  - **ElasticSearch Optimization**: 전문 검색 엔진 활용 (< 500ms)
+  - **외부 의존성 최소화**: Hot Path에서 LLM 제거
+  - **Design Pattern**: Facade, Strategy, Adapter
+
+  **2. 유지보수성 (QAS-06)**
+  - **Strategy Pattern**: 다양한 토큰화/검색 전략 교체 가능
+  - **Adapter Pattern**: 외부 시스템 변경 시 어댑터만 수정
+  - **Design Pattern**: Strategy, Adapter
+
+  **3. 성능 (QAS-02)**
+  - **Hot Path 총 처리 시간**: ~530ms (목표 3초의 17.7%)
+  - **외부 의존성 최소화**: Hot Path에서 LLM 제거
+  - **Design Pattern**: Facade, Strategy, Adapter
+end note
+
+@enduml
+

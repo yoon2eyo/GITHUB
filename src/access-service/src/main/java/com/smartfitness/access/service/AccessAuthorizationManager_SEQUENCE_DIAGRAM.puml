@@ -1,0 +1,260 @@
+@startuml AccessAuthorizationManager_BehaviorDiagram
+title AccessAuthorizationManager 컴포넌트 Behavior Diagram\n(안면인식 출입 인증 시나리오)
+
+' External Caller (Provided Interface 호출자)
+participant "AccessControlController" as Controller
+
+' AccessAuthorizationManager Component
+box "AccessAuthorizationManager Component" #LightBlue
+  participant "AccessAuthorizationManager" as AuthManager
+  participant "FaceVectorCache" as Cache
+end box
+
+' Required Interfaces
+box "Required Interfaces" #LightGreen
+  participant "IFaceModelServiceClient" as FaceModelClient
+  participant "IGateControlService" as GateService
+  participant "IAccessEventPublisher" as EventPublisher
+end box
+
+== 시나리오 1: 안면인식 출입 인증 (성공 시나리오) ==
+
+' 메시지 1.1: Provided Interface 호출 수신
+Controller -> AuthManager : [1.1] authorizeFaceAccess(branchId, equipmentId, facePhoto)
+activate AuthManager
+note right
+  **Provided Interface 호출 수신**
+  IAccessAuthorizationService.authorizeFaceAccess()
+
+  **시작점**: 외부 Controller가 Provided Interface를 통해 컴포넌트 호출
+  **인스턴스 수준**: AccessAuthorizationManager 클래스의 인스턴스가 호출을 수신
+
+  **Design Pattern: Facade Pattern**
+  - 복잡한 출입 인증 프로세스를 단순한 인터페이스로 제공
+end note
+
+' 메시지 1.2: 안면 사진 데이터 변환
+AuthManager -> AuthManager : [1.2] facePhoto.getBytes()
+note right
+  **안면 사진 데이터 변환**
+  MultipartFile → byte[] 변환 수행
+
+  **인스턴스 수준**: 동일한 AccessAuthorizationManager 인스턴스 내에서 데이터 변환
+  **내부 연산**: 컴포넌트 내부에서 처리되는 private 메서드 호출
+end note
+
+' 메시지 1.3: 캐시 벡터 데이터 조회 호출
+AuthManager -> Cache : [1.3] getActiveVector(branchId)
+activate Cache
+note left
+  **캐시 벡터 데이터 조회 호출**
+  FaceVectorCache.getActiveVector(branchId)
+
+  **인스턴스 수준**: AccessAuthorizationManager 인스턴스가 FaceVectorCache 인스턴스 호출
+
+  **Tactic: Data Pre-Fetching (DD-05)**
+  - Startup 시 상위 10K 벡터 미리 로드
+  - Cache hit rate: >90%
+  - Response time: ~5ms (vs DB: ~50ms)
+  - DB I/O를 Hot Path에서 제거
+
+  **QAS-02 (Performance): 데이터 조회 시간 90% 감소**
+
+  **Design Pattern: Cache-Aside Pattern**
+end note
+Cache --> AuthManager : [1.3] FaceVectorDto
+deactivate Cache
+
+' 메시지 1.4: 안면 유사도 계산 호출
+AuthManager -> FaceModelClient : [1.4] calculateSimilarity(photoBytes, cachedVector)
+activate FaceModelClient
+note right
+  **안면 유사도 계산 호출**
+  IFaceModelServiceClient.calculateSimilarity(...)
+
+  **인스턴스 수준**: AccessAuthorizationManager 인스턴스가 IFaceModelServiceClient 구현체 호출
+
+  **Tactic: Same Physical Node (DD-05)**
+  - IPC/gRPC 통신으로 네트워크 오버헤드 제거
+  - HTTP REST 대비 10-20ms 지연 감소
+
+  **Tactic: Pipeline Optimization (DD-05)**
+  - 병렬 특징점 추출 (CompletableFuture)
+  - 순차: 405ms → 병렬: 205ms (49% 감소)
+
+  **QAS-02 (Performance): 가장 큰 병목 구간 최적화**
+
+  **Design Pattern: Strategy Pattern**
+  - IFaceModelServiceClient 인터페이스로 다양한 구현체 교체 가능
+end note
+FaceModelClient --> AuthManager : [1.4] SimilarityResultDto{userId, score, isMatch}
+deactivate FaceModelClient
+
+' 메시지 1.5: 출입 인증 결정 로직 실행
+AuthManager -> AuthManager : [1.5] checkSimilarity(similarity, threshold)
+note right
+  **출입 인증 결정 로직 실행**
+  유사도 점수 비교 및 인증 결과 판단
+
+  **인스턴스 수준**: AccessAuthorizationManager 인스턴스 내에서 조건문 평가
+  **판단 기준**: isMatch && score >= 0.85 (threshold)
+
+  **QAS-02 (Performance): 결정 로직 ~10ms, 빠른 판단으로 지연 최소화**
+end note
+
+alt [인증 성공] similarity >= threshold && isMatch == true
+  ' 메시지 1.6: 게이트 개방 명령 호출
+  AuthManager -> GateService : [1.6] openGate(equipmentId)
+  activate GateService
+  note left
+    **게이트 개방 명령 호출**
+    IGateControlService.openGate(equipmentId)
+
+    **인스턴스 수준**: AccessAuthorizationManager 인스턴스가 IGateControlService 구현체 호출
+
+    **UC-22: Gate Open Execution**
+    - Target: 판독 성공 후 1초 이내
+    - QAS-02 requirement
+
+    **Design Pattern: Strategy Pattern**
+    - IGateControlService 인터페이스로 다양한 구현체 교체 가능
+  end note
+  GateService --> AuthManager : [1.6] true
+  deactivate GateService
+
+  ' 메시지 1.7: 출입 허가 이벤트 발행 호출
+  AuthManager -> EventPublisher : [1.7] publishAccessGranted(AccessGrantedEvent)
+  activate EventPublisher
+  note right
+    **출입 허가 이벤트 발행 호출**
+    IAccessEventPublisher.publishAccessGranted(...)
+
+    **인스턴스 수준**: AccessAuthorizationManager 인스턴스가 IAccessEventPublisher 구현체 호출
+
+    **Tactic: Event-Based Architecture (DD-02)**
+    - RabbitMQ Durable Queue, 비동기 이벤트 발행
+    - 느슨한 결합 (Loose Coupling), Passive Redundancy
+
+    **QAS-04 (Security): Audit Trail - 모든 출입 시도 기록**
+    **QAS-02 (Performance): 비동기 처리로 핫 패스 영향 없음 (~10ms)**
+
+    **Design Pattern: Observer Pattern**
+    - Pub/Sub 구조, 여러 구독자에게 이벤트 전달
+  end note
+  EventPublisher --> AuthManager : [1.7] void
+  deactivate EventPublisher
+
+  ' 메시지 1.8: 인증 성공 응답 반환
+  AuthManager --> Controller : [1.8] Map{result: "GRANTED", userId, similarityScore, processingTimeMs}
+  deactivate AuthManager
+  note right
+    **인증 성공 응답 반환**
+    Provided Interface를 통해 응답 반환
+
+    **인스턴스 수준**: AccessAuthorizationManager 인스턴스가 외부로 응답 전송
+
+    **QAS-02 (Performance):**
+    - Total time: ~320ms (목표 3초의 10.7%)
+    - ✓ 목표 달성
+
+    **성능 분석:**
+    - Cache: ~5ms (1.6%)
+    - IPC: ~205ms (64.1%)
+    - Gate: ~100ms (31.2%)
+    - Event: ~10ms (3.1%)
+  end note
+
+else [인증 실패] similarity < threshold || isMatch == false
+  ' 메시지 2.6: 게이트 개방 명령 생략
+  note over AuthManager
+    **게이트 개방 명령 생략**
+    인증 실패로 IGateControlService 호출하지 않음
+
+    **인스턴스 수준**: AccessAuthorizationManager 인스턴스에서 조건부로 게이트 제어 생략
+  end note
+
+  ' 메시지 2.7: 출입 거부 이벤트 발행 호출
+  AuthManager -> EventPublisher : [2.7] publishAccessDenied(AccessDeniedEvent)
+  activate EventPublisher
+  note left
+    **출입 거부 이벤트 발행 호출**
+    IAccessEventPublisher.publishAccessDenied(...)
+
+    **인스턴스 수준**: AccessAuthorizationManager 인스턴스가 IAccessEventPublisher 구현체 호출
+
+    **Tactic: Event-Based Architecture (DD-02)**
+    - AccessDeniedEvent 발행, 비동기 처리
+
+    **QAS-04 (Security):**
+    - 거부된 접근 시도도 기록
+    - 실패 원인 분석 가능, 보안 모니터링
+  end note
+  EventPublisher --> AuthManager : [2.7] void
+  deactivate EventPublisher
+
+  ' 메시지 2.8: 인증 실패 응답 반환
+  AuthManager --> Controller : [2.8] Map{result: "DENIED", reason: "NO_MATCH", similarityScore}
+  deactivate AuthManager
+  note right
+    **인증 실패 응답 반환**
+    Provided Interface를 통해 응답 반환
+
+    **인스턴스 수준**: AccessAuthorizationManager 인스턴스가 외부로 응답 전송
+
+    **QAS-02 (Performance):**
+    - Total time: ~220ms (게이트 제어 생략으로 더 빠름)
+  end note
+end
+
+== Design Pattern & Tactics 요약 ==
+note over Controller, EventPublisher
+  **적용된 Design Pattern:**
+
+  1. **Facade Pattern**
+     - AccessAuthorizationManager가 복잡한 인증 프로세스를 단순화
+
+  2. **Strategy Pattern**
+     - IFaceModelServiceClient, IGateControlService
+     - 인터페이스로 구현체 교체 가능
+
+  3. **Observer Pattern**
+     - IAccessEventPublisher, 이벤트 기반 Pub/Sub 구조
+
+  4. **Cache-Aside Pattern**
+     - FaceVectorCache
+
+  **적용된 Tactics (DD-05, DD-02):**
+
+  1. **Data Pre-Fetching**: 캐시 히트율 >90%, DB I/O 제거
+  2. **Same Physical Node**: IPC/gRPC 통신, 네트워크 지연 제거
+  3. **Pipeline Optimization**: 병렬 처리, 49% 지연 감소
+  4. **Event-Based Architecture**: 느슨한 결합, 비동기 처리
+end note
+
+== QAS Achievement Analysis ==
+note over Controller, EventPublisher
+  **QAS-02: 신속하고 정확한 안면인식 출입 인증 (Performance)**
+
+  **목표 달성:**
+  - 95% 요청이 3초 이내 응답 ✓
+  - GRANTED: ~320ms (목표의 10.7%)
+  - DENIED: ~220ms (목표의 7.3%)
+
+  **주요 최적화 기여 요소:**
+  1. **FaceVectorCache**: Data Pre-Fetching으로 90% 조회 시간 감소
+  2. **IFaceModelServiceClient**: Pipeline Optimization으로 49% 병목 감소
+  3. **IGateControlService**: 비동기 게이트 제어로 핫 패스 영향 최소화
+
+  **QAS-04: 민감 정보 접근 감사로그 (Security)**
+
+  **목표 달성:**
+  - 모든 출입 시도에 대한 감사 추적 ✓
+  - AccessGrantedEvent / AccessDeniedEvent 기록
+
+  **주요 기여 요소:**
+  1. **IAccessEventPublisher**: Observer Pattern으로 이벤트 발행
+  2. **Event-Based Architecture**: Durable Queue로 손실 방지
+  3. **비동기 처리**: 성능 영향 없이 보안 감사 구현
+end note
+
+@enduml

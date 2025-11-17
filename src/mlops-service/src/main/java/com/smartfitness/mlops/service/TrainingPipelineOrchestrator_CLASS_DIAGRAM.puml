@@ -1,0 +1,210 @@
+@startuml TrainingPipelineOrchestrator_ClassDiagram
+title TrainingPipelineOrchestrator 컴포넌트 Class Diagram
+skinparam backgroundColor #FEFEFE
+skinparam componentStyle rectangle
+
+' Business Layer
+package "Business Layer" #LightGreen {
+  ' Provided Interface
+  interface ITrainingPipelineService {
+    +orchestrateTraining(trainingId: String): void
+  }
+  
+  ' Main Component (Facade Pattern - 분홍색)
+  class TrainingPipelineOrchestrator <<Main>> #FFB6C1 {
+    -modelVerificationService: IModelVerificationService
+    -dataManagementService: IDataManagementService
+    -modelDeploymentService: IModelDeploymentService
+    -messagePublisherService: IMessagePublisherService
+    +orchestrateTraining(trainingId: String): void
+  }
+  
+  ' Required Interfaces (Strategy Pattern - 초록색)
+  interface IModelVerificationService #90EE90 {
+    +verifyModel(modelId: String): boolean
+  }
+  
+  interface IDataManagementService #90EE90 {
+    +collectTrainingData(): void
+    +persistTrainingData(data: String): void
+  }
+  
+  interface IModelDeploymentService #90EE90 {
+    +deployModel(modelId: String): String
+  }
+  
+  interface IMessagePublisherService {
+    +publishEvent(event: Object): void
+  }
+  
+  interface IModelDataRepository {
+    +save(model: Model): void
+    +findById(modelId: String): Model
+  }
+  
+  interface ITrainingDataRepository {
+    +save(data: TrainingData): void
+    +findAll(): List<TrainingData>
+  }
+  
+  interface IMLInferenceEngine {
+    +deployModel(modelId: String): void
+    +trainModel(data: List<TrainingData>): String
+  }
+  
+  interface IFaceModelClient {
+    +notifyModelUpdate(modelId: String): void
+  }
+  
+  interface IAuthRepository {
+    +findAllFaceVectors(): List<FaceVector>
+  }
+  
+  interface IHelperRepository {
+    +findAllTaskPhotos(): List<TaskPhoto>
+  }
+  
+  ' Implementations (Strategy Pattern - 초록색)
+  class ModelVerificationService #90EE90 {
+    -accuracyVerifier: AccuracyVerifier
+    -performanceVerifier: PerformanceVerifier
+    -messagePublisherService: IMessagePublisherService
+    +verifyModel(modelId: String): boolean
+  }
+  
+  class DataManagementService #90EE90 {
+    -dataCollector: DataCollector
+    -dataPersistenceManager: DataPersistenceManager
+    -modelDataRepository: IModelDataRepository
+    -trainingDataRepository: ITrainingDataRepository
+    +collectTrainingData(): void
+    +persistTrainingData(data: String): void
+  }
+  
+  class DeploymentService #90EE90 {
+    -modelDataRepository: IModelDataRepository
+    -mlInferenceEngine: IMLInferenceEngine
+    -faceModelClient: IFaceModelClient
+    -messagePublisherService: IMessagePublisherService
+    +deployModel(modelId: String): String
+  }
+  
+  ' Mediator Components (Saga Pattern - 보라색)
+  class DataCollector #DDA0DD {
+    -authRepository: IAuthRepository
+    -helperRepository: IHelperRepository
+    +collectFromAuthService(): void
+    +collectFromHelperService(): void
+  }
+  
+  class DataPersistenceManager #DDA0DD {
+    +persist(data: String): void
+  }
+  
+  class AccuracyVerifier #DDA0DD {
+    +verifyAccuracy(modelId: String): boolean
+  }
+  
+  class PerformanceVerifier #DDA0DD {
+    +verifyPerformance(modelId: String): boolean
+  }
+  
+  ' Relationships
+  ITrainingPipelineService <|.. TrainingPipelineOrchestrator : implements
+  IModelVerificationService <|.. ModelVerificationService : implements
+  IDataManagementService <|.. DataManagementService : implements
+  IModelDeploymentService <|.. DeploymentService : implements
+  
+  TrainingPipelineOrchestrator --> IModelVerificationService : uses
+  TrainingPipelineOrchestrator --> IDataManagementService : uses
+  TrainingPipelineOrchestrator --> IModelDeploymentService : uses
+  TrainingPipelineOrchestrator --> IMessagePublisherService : uses
+  
+  ModelVerificationService --> AccuracyVerifier : uses
+  ModelVerificationService --> PerformanceVerifier : uses
+  ModelVerificationService --> IMessagePublisherService : uses
+  
+  DataManagementService --> DataCollector : uses
+  DataManagementService --> DataPersistenceManager : uses
+  DataManagementService --> IModelDataRepository : uses
+  DataManagementService --> ITrainingDataRepository : uses
+  
+  DataCollector --> IAuthRepository : uses
+  DataCollector --> IHelperRepository : uses
+  
+  DeploymentService --> IModelDataRepository : uses
+  DeploymentService --> IMLInferenceEngine : uses
+  DeploymentService --> IFaceModelClient : uses
+  DeploymentService --> IMessagePublisherService : uses
+}
+
+' Notes
+note right of TrainingPipelineOrchestrator
+  **Saga Pattern (DD-07)**
+  - 4단계 파이프라인 오케스트레이션
+  - 각 단계별 트랜잭션 관리
+  - 부분 실패 시 자동 롤백
+  
+  **Flow:**
+  1. 데이터 수집 (IDataManagementService)
+  2. 모델 학습 (내부 처리)
+  3. 모델 검증 (IModelVerificationService)
+  4. Hot Swap 배포 (IModelDeploymentService)
+  5. 이벤트 발행 (IMessagePublisherService)
+  
+  **QAS-06**: 무중단 모델 배포
+  **QAS-02**: GPU 리소스 최적화
+end note
+
+note right of ModelVerificationService
+  **Model Verification**
+  - 정확도 검증: >90% 목표
+  - 성능 검증: <3초 응답 시간
+  - AccuracyVerifier + PerformanceVerifier
+  - 검증 실패 시 배포 중단
+end note
+
+note right of DataManagementService
+  **Data Collection (DD-03)**
+  - Event-Based Replication
+  - READ-ONLY 접근으로 원본 데이터 보호
+  - DataCollector를 통한 데이터 수집
+  - TrainingDataStore에 저장
+end note
+
+note right of DeploymentService
+  **Hot Swap Deployment (DD-07)**
+  - AtomicReference 기반 <1ms 모델 교체
+  - MLInferenceEngine에 배포
+  - FaceModel Service에 알림
+  - 무중단 배포로 가용성 99.9% 유지
+end note
+
+note bottom of DataCollector
+  **Event-Based Replication (DD-03)**
+  - Auth Service: 안면 벡터 데이터
+  - Helper Service: 태스크 사진 데이터
+  - READ-ONLY 접근으로 데이터 일관성 보장
+end note
+
+legend right
+  **Design Patterns (색상 구분):**
+  - **Facade Pattern (분홍색)**: TrainingPipelineOrchestrator
+  - **Strategy Pattern (초록색)**: IModelVerificationService, IDataManagementService, IModelDeploymentService, ModelVerificationService, DataManagementService, DeploymentService
+  - **Saga Pattern (보라색)**: DataCollector, DataPersistenceManager, AccuracyVerifier, PerformanceVerifier
+  
+  **Pipeline Flow (DD-07):**
+  - **Step 1**: Data Collection → DataManagementService → DataCollector
+  - **Step 2**: Model Training → Internal Processing
+  - **Step 3**: Model Verification → ModelVerificationService → AccuracyVerifier + PerformanceVerifier
+  - **Step 4**: Hot Swap Deployment → DeploymentService → IMLInferenceEngine + IFaceModelClient
+  - **Step 5**: Event Publishing → IMessagePublisherService
+  
+  **Quality Attributes:**
+  - QAS-06: 무중단 모델 배포 (Hot Swap)
+  - QAS-02: GPU 리소스 최적화
+  - QAS-05: 가용성 (99.9%)
+end legend
+
+@enduml
+
